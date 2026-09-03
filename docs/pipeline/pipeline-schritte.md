@@ -37,7 +37,7 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 ## S3 · Zielstatus prüfen (`S3_target_status`)
 
 - **Eingabe:** `context.slug.slug_candidates`, `market.magazine_root` (Fallback `market.domain`),
-  `url_index` des Markts.
+  `market.path_map`, Hub-Treffer aus S7a, hreflang-Alternates der Quelle.
 - **Verarbeitung:** Aus jedem Kandidaten wird eine Ziel-URL gebildet (`<root>/<slug>/`).
   Für jede URL: Abgleich mit dem Index **und** Live-GET über `verifyUrl` (HTTP-Status,
   Canonical-Vergleich, Soft-404-Erkennung). Der erste Treffer gewinnt und wird per
@@ -204,7 +204,8 @@ Guthabenfehler werden gesondert gemeldet. Der tatsächlich gesendete Prompt wird
   `has_table === true`, sonst `null`.
 - **Input-Snapshot:** darf gekürzt werden, der Modell-Payload nie.
 - **Abhängigkeiten:** vor jedem Schritt geprüft; fehlt eine Voraussetzung (auch
-  ein leerer URL-Index), wird der Schritt `blocked`.
+  ein fehlender Link-Pool), wird der Schritt `blocked`. Ein leerer Gesamtindex ist
+  kein Blocker mehr – den gibt es nicht mehr.
 - **Jobstatus:** `done` nur, wenn kein Schritt `error` oder `blocked` ist, sonst
   `done_with_errors`.
 - **Telemetrie:** `run_count` wird vor der Ausführung erhöht; S10/S11 aggregieren
