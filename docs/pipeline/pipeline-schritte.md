@@ -38,14 +38,16 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 
 - **Eingabe:** `context.slug.slug_candidates`, `market.magazine_root` (Fallback `market.domain`),
   `market.path_map`, Hub-Treffer aus S7a, hreflang-Alternates der Quelle.
-- **Verarbeitung:** Aus jedem Kandidaten wird eine Ziel-URL gebildet (`<root>/<slug>/`).
-  Für jede URL: Abgleich mit dem Index **und** Live-GET über `verifyUrl` (HTTP-Status,
-  Canonical-Vergleich, Soft-404-Erkennung). Der erste Treffer gewinnt und wird per
-  `extractPage` vollständig geladen.
+- **Verarbeitung:** Nachweiskette in fester Reihenfolge: (1) hreflang-Alternate der
+  Quelle mit passender Markt-Locale, (2) Treffer im Link-Pool/Hub, (3) über `path_map`
+  segmentweise übersetzte Slug-URLs. Jede Kandidaten-URL wird per Live-GET (`verifyUrl`)
+  geprüft (HTTP-Status, Canonical-Vergleich, Soft-404). Der erste valide Treffer gewinnt
+  und wird per `extractPage` vollständig geladen; alle Nachweise werden gespeichert.
 - **Ausgabe:** `context.target = { status, url, checked[], doc }` mit
   - `EXISTS` – eine Kandidaten-URL antwortet valide mit 200,
   - `VERIFIED_404` – mindestens eine URL liefert nachweislich 404,
-  - `NOT_IN_INDEX` – kein 404-Nachweis und kein Indextreffer (Aussage: unbekannt, nicht „existiert nicht").
+  - `NOT_IN_INDEX` – kein 404-Nachweis und kein Pool-/hreflang-Treffer (Aussage:
+    unbekannt, nicht „existiert nicht").
 - **Kein LLM.**
 
 ## S4 · Abgleich (`S4_compare`)
