@@ -78,15 +78,19 @@ export const runFromStepFn = createServerFn({ method: "POST" })
     return results;
   });
 
-export const rebuildIndex = createServerFn({ method: "POST" })
+/**
+ * Admin-Diagnose: Link-Pool für Markt + Beispiel-URL aufbauen (max. 8 Abrufe).
+ * Ersetzt den früheren Gesamtindex-Lauf.
+ */
+export const previewLinkPool = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ marketId: z.string().uuid(), limit: z.number().min(1).max(500).default(80) }).parse(d),
+    z.object({ marketId: z.string().uuid(), sourceUrl: z.string().url() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertRole(context.supabase as never, context.userId, "admin");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { collectUrls, indexPage } = await import("@/lib/pipeline/crawl.server");
+    const { buildLinkPool } = await import("@/lib/pipeline/hub.server");
     const { data: market, error } = await supabaseAdmin
       .from("markets")
       .select("*")
@@ -94,21 +98,33 @@ export const rebuildIndex = createServerFn({ method: "POST" })
       .single();
     if (error || !market) throw new Error("Markt nicht gefunden.");
 
-    const urls = await collectUrls(market as never, { limit: data.limit });
-    let indexed = 0;
-    for (const url of urls.slice(0, data.limit)) {
-      const row = await indexPage(url, market as never);
-      if (!row) continue;
-      const { error: upErr } = await supabaseAdmin
-        .from("url_index")
-        .upsert({ ...row, last_seen: new Date().toISOString() }, { onConflict: "market_id,url" });
-      if (!upErr) indexed++;
+    const pool = await buildLinkPool(market as never, data.sourceUrl);
+    for (const e of pool.entries) {
+      await supabaseAdmin.from("link_pool").upsert(
+        {
+          market_id: data.marketId,
+          content_type: "magazine",
+          source_page: e.source_page,
+          url: e.url,
+          anchor_text: e.anchor_text,
+          path_type: e.path_type,
+          origin: e.origin,
+          http_status: 200,
+          fetched_at: new Date().toISOString(),
+        } as never,
+        { onConflict: "market_id,content_type,url" },
+      );
     }
     await supabaseAdmin
       .from("markets")
       .update({ index_last_run: new Date().toISOString() })
       .eq("id", data.marketId);
-    return { discovered: urls.length, indexed };
+    return {
+      hub_url: pool.hub_url,
+      fetches: pool.fetches,
+      entries: pool.entries.length,
+      siblings: pool.siblings.map((s) => s.url),
+    };
   });
 
 export const savePrompt = createServerFn({ method: "POST" })
