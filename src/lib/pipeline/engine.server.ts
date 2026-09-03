@@ -691,6 +691,9 @@ export async function runStep(
 
     case "S13_export": {
       const source = requireSource(ctx);
+      const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
+      const gaps = buildGapReport(anchors, ctx.verifiedLinks ?? [], ctx.linkSearchLog ?? []);
+      const broken = ctx.brokenLinks ?? [];
       const md = [
         `# ${ctx.slug?.term_translated ?? source.h1 ?? ""}`,
         "",
@@ -698,6 +701,10 @@ export async function runStep(
         `> Zielstatus: ${ctx.target?.status ?? "-"}${ctx.target?.url ? ` (${ctx.target.url})` : ""}`,
         ctx.target?.resolution_method ? `> Zielermittlung: ${ctx.target.resolution_method}` : "",
         ctx.target?.hreflang_hint ? `> hreflang-Hinweis: ${ctx.target.hreflang_hint}` : "",
+        ctx.linkPool
+          ? `> Link-Pool: ${ctx.linkPool.entries.length} Links aus ${ctx.linkPool.fetches.length} Abrufen` +
+            (ctx.linkPool.hub_url ? ` (Hub: ${ctx.linkPool.hub_url})` : "")
+          : "",
         "",
         ...(ctx.content ?? []).map((c) => c.markdown),
         "",
@@ -705,11 +712,30 @@ export async function runStep(
         ...(ctx.verifiedLinks ?? []).map(
           (l) => `- [${l.anchor}](${l.target_url}) — HTTP ${l.http_status}`,
         ),
+        "",
+        "## Gap-Report",
+        gaps.length
+          ? gaps
+              .map(
+                (g) =>
+                  `- **${g.anchor}** — ${g.reason}. Suchbegriffe: ${g.search_terms.join(", ") || "–"}. ` +
+                  `Site-Suche: ${g.stage2_run ? "ausgeführt" : "nicht ausgeführt"}.`,
+              )
+              .join("\n")
+          : "- Keine offenen Anker: jeder geplante Anker hat einen verifizierten Link.",
+        broken.length
+          ? `\n### Verworfene Poolkandidaten\n${broken
+              .map((b) => `- ${b.anchor}: ${b.url} — ${b.reason}`)
+              .join("\n")}`
+          : "",
         market.closing_note ? `\n${market.closing_note}` : "",
       ]
         .filter((l) => l !== "")
         .join("\n");
-      return { output: { length: md.length }, context: { exportMarkdown: md } };
+      return {
+        output: { length: md.length, gaps: gaps.length, broken: broken.length },
+        context: { exportMarkdown: md, gapReport: gaps },
+      };
     }
 
     default:
