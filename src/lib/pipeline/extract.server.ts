@@ -7,12 +7,17 @@ export const USER_AGENT =
 export async function fetchHtml(
   url: string,
 ): Promise<{ status: number; finalUrl: string; html: string }> {
-  const res = await fetch(url, {
-    redirect: "follow",
-    headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
-  });
-  const html = res.headers.get("content-type")?.includes("text/") ? await res.text() : "";
-  return { status: res.status, finalUrl: res.url || url, html };
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
+    });
+    const html = res.headers.get("content-type")?.includes("text/") ? await res.text() : "";
+    return { status: res.status, finalUrl: res.url || url, html };
+  } catch {
+    // Netzwerk-/URL-Fehler dürfen die Pipeline nicht abbrechen.
+    return { status: 0, finalUrl: url, html: "" };
+  }
 }
 
 function textOf(el: HTMLElement | null | undefined): string {

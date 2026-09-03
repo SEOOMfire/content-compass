@@ -28,6 +28,32 @@ function originOf(domain: string): string {
   return /^https?:\/\//i.test(d) ? d : `https://${d}`;
 }
 
+/**
+ * Marktkonfiguration normalisieren: relative Roots wie "/magazyn/" werden
+ * gegen die Marktdomain zu absoluten URLs aufgelöst (marktunabhängig).
+ */
+export function normalizeMarket<T extends HubMarket>(market: T): T {
+  const base = originOf(market.domain);
+  const abs = (v: string | null | undefined): string | null => {
+    if (!v) return null;
+    const t = v.trim();
+    if (!t) return null;
+    try {
+      return new URL(t, base + "/").toString();
+    } catch {
+      return null;
+    }
+  };
+  return {
+    ...market,
+    magazine_root: abs(market.magazine_root),
+    category_root: abs(market.category_root),
+    search_url_pattern: market.search_url_pattern
+      ? (abs(market.search_url_pattern.replace("{q}", "__Q__"))?.replace("__Q__", "{q}") ?? null)
+      : null,
+  };
+}
+
 function absolutize(href: string, base: string): string | null {
   try {
     const u = new URL(href, base);
@@ -121,9 +147,10 @@ function plainText(html: string): string {
  * 1 Hub (ggf. 1 Fallback-Ebene), 1 Startseite (Navigation), bis zu 3 Geschwisterartikel.
  */
 export async function buildLinkPool(
-  market: HubMarket,
+  rawMarket: HubMarket,
   sourceUrl: string,
 ): Promise<LinkPoolResult> {
+  const market = normalizeMarket(rawMarket);
   const delay = market.crawl_delay_ms ?? 400;
   const fetches: LinkPoolResult["fetches"] = [];
   const entries: PoolEntry[] = [];
@@ -161,6 +188,9 @@ export async function buildLinkPool(
     hubCandidates = [market.magazine_root, market.category_root].filter(Boolean) as string[];
     if (!hubCandidates.length) throw e;
   }
+  hubCandidates = hubCandidates
+    .map((c) => absolutize(c, originOf(market.domain) + "/"))
+    .filter((c): c is string => Boolean(c));
   for (const cand of hubCandidates.slice(0, 2)) {
     const res = await load(cand, "hub", "hub");
     if (res) {
@@ -203,9 +233,10 @@ export async function buildLinkPool(
  * sonst – falls konfiguriert – eine site:-Websuche über Firecrawl.
  */
 export async function siteSearch(
-  market: HubMarket,
+  rawMarket: HubMarket,
   query: string,
 ): Promise<{ source: "internal" | "web" | "none"; entries: PoolEntry[] }> {
+  const market = normalizeMarket(rawMarket);
   if (market.search_url_pattern?.includes("{q}")) {
     const url = market.search_url_pattern.replace("{q}", encodeURIComponent(query));
     const { status, html, finalUrl } = await fetchHtml(url);
@@ -245,9 +276,10 @@ export { USER_AGENT };
 
 /** Einzelner Hub-Abruf für S3, falls der Link-Pool noch nicht gebaut wurde. */
 export async function fetchHubEntries(
-  market: HubMarket,
+  rawMarket: HubMarket,
   sourceUrl: string,
 ): Promise<{ hub_url: string | null; entries: PoolEntry[]; status: number }> {
+  const market = normalizeMarket(rawMarket);
   let candidates: string[] = [];
   try {
     candidates = buildHubUrls(sourceUrl, market);
@@ -255,6 +287,9 @@ export async function fetchHubEntries(
     if (!(e instanceof PathMapError)) throw e;
     candidates = [market.magazine_root, market.category_root].filter(Boolean) as string[];
   }
+  candidates = candidates
+    .map((c) => absolutize(c, originOf(market.domain) + "/"))
+    .filter((c): c is string => Boolean(c));
   for (const cand of candidates.slice(0, 2)) {
     const { status, html, finalUrl } = await fetchHtml(cand);
     if (status === 200 && html) {
