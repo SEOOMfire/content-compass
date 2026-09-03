@@ -123,7 +123,7 @@ export interface UrlVerification {
   http_status: number;
   canonical_ok: boolean;
   soft404: boolean;
-  reason?: string;
+  reason?: string | undefined;
 }
 
 /** GET-Prüfung: 200, Canonical passt zur URL, kein Soft-404. Kein Canonical = nicht ok. */
