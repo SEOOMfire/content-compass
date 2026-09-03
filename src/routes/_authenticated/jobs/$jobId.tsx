@@ -9,6 +9,7 @@ import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/jobs/$jobId")({
   head: () => ({
@@ -153,7 +154,7 @@ function JobDetail() {
 
       <div className="space-y-2">
         {PIPELINE.map((def) => {
-          const step = (steps.data ?? []).find((s) => s.step_key === def.key);
+          const step = (steps.data ?? []).find((s: Tables<"job_steps">) => s.step_key === def.key);
           const isOpen = open === def.key;
           return (
             <Card key={def.key} className="border-border bg-surface">

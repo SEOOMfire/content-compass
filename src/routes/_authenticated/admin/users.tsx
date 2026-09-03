@@ -32,9 +32,9 @@ function UsersPage() {
         supabase.from("profiles").select("id,email").order("email"),
         supabase.from("user_roles").select("user_id,role"),
       ]);
-      return (profiles ?? []).map((p) => ({
+      return (profiles ?? []).map((p: { id: string; email: string }) => ({
         ...p,
-        roles: (roles ?? []).filter((r) => r.user_id === p.id).map((r) => r.role as AppRole),
+        roles: (roles ?? []).filter((r: { user_id: string; role: AppRole }) => r.user_id === p.id).map((r: { user_id: string; role: AppRole }) => r.role as AppRole),
       }));
     },
   });

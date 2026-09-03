@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/admin/markets")({
   head: () => ({
@@ -79,7 +80,7 @@ function MarketsPage() {
 
   return (
     <div className="space-y-4">
-      {(markets.data ?? []).map((m) => (
+      {(markets.data ?? []).map((m: Tables<"markets">) => (
         <Card key={m.id} className="border-border bg-surface">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">
@@ -103,7 +104,7 @@ function MarketsPage() {
                   </div>
                 ),
               )}
-              {["closing_note", "forbidden_claims", "institutions"].map((k) => (
+              {["closing_note", "forbidden_claims", "institutions"].map((k: string) => (
                 <div key={k} className="space-y-1.5 md:col-span-2">
                   <Label>{k}</Label>
                   <Textarea
