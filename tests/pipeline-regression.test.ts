@@ -235,27 +235,30 @@ describe("9–11 · S11 Eingabe je Abschnitt", () => {
   });
 });
 
-describe("14 · Abhängigkeiten und leerer Index", () => {
+describe("14 · Abhängigkeiten (Link-Pool statt Gesamtindex)", () => {
   const ctx: JobContext = {};
 
-  test("negativer Test: Markt ohne URL-Index blockiert vor der Verlinkung", () => {
-    expect(dependencyBlocker("S5_style_profile", ctx, 0)).toContain("URL-Index");
-    expect(dependencyBlocker("S7_link_candidates", ctx, 0)).toBeTruthy();
+  test("ohne Link-Pool blockieren Stilprofil und Verlinkung", () => {
+    expect(dependencyBlocker("S5_style_profile", ctx)).toContain("S7a");
+    expect(dependencyBlocker("S7_link_candidates", ctx)).toBeTruthy();
+  });
+
+  test("S7a benötigt nur die Quelle", () => {
+    expect(dependencyBlocker("S7a_link_pool", ctx)).toContain("S1");
+    expect(
+      dependencyBlocker("S7a_link_pool", { source: { sections: [], tables: [] } as never }),
+    ).toBeNull();
   });
 
   test("fehlgeschlagene Vorstufen blockieren nachgelagerte Schritte", () => {
-    expect(dependencyBlocker("S11_generate_content", {}, 10)).toContain("S1");
+    expect(dependencyBlocker("S11_generate_content", {})).toContain("S1");
     expect(
-      dependencyBlocker(
-        "S11_generate_content",
-        {
-          source: { sections: [], tables: [] } as never,
-          plan: { sections: [] },
-        },
-        10,
-      ),
+      dependencyBlocker("S11_generate_content", {
+        source: { sections: [], tables: [] } as never,
+        plan: { sections: [] },
+      }),
     ).toContain("S6");
-    expect(dependencyBlocker("S12_qa", {}, 10)).toContain("S11");
-    expect(dependencyBlocker("S13_export", { content: [{ heading: "x", markdown: "y" }] }, 10)).toBeNull();
+    expect(dependencyBlocker("S12_qa", {})).toContain("S11");
+    expect(dependencyBlocker("S13_export", { content: [{ heading: "x", markdown: "y" }] })).toBeNull();
   });
 });
