@@ -9,7 +9,8 @@
 | `markets` | Zielmärkte | `country`, `language`, `locale`, `domain`, `magazine_root`, `category_root`, `path_map`, `brand`, `address_form`, `institutions`, `forbidden_claims`, `closing_note`, `crawl_delay_ms`, `index_last_run`, `active` |
 | `prompt_templates` | Aktuell gültiger Prompt je Schritt | `step_key`, `system_prompt`, `user_prompt`, `model`, `temperature`, `max_tokens`, `response_format`, `version` |
 | `prompt_versions` | Vollständige Versionshistorie | wie oben + `template_id`, `version`, `created_by` |
-| `url_index` | Ziel-URL-Index je Markt | `url`, `path_type`, `title`, `h1`, `meta_description`, `intro_text`, `canonical`, `http_status`, `last_seen` |
+| `link_pool` | Gezielt geernteter Link-Pool je Markt (ersetzt den Gesamtindex) | `market_id`, `content_type`, `source_page`, `url`, `anchor_text`, `path_type`, `origin` (`hub`/`nav`/`inline`/`footer`/`search`), `http_status`, `fetched_at` |
+| `url_index` | *entfällt* – kein Gesamtindex mehr | – |
 | `jobs` | Ein Lokalisierungsvorgang | `source_url`, `market_id`, `status`, `current_step`, `context` (JSON), `created_by` |
 | `job_steps` | Ein Lauf je Schritt und Job | `step_key`, `step_order`, `status`, `input`, `output`, `prompt_snapshot`, `model`, `tokens_in/out`, `duration_ms`, `error`, `run_count` |
 | `verified_links` | Nur geprüfte Links | `job_id`, `anchor`, `target_url`, `http_status`, `canonical_ok`, `confidence`, `source` |
@@ -30,12 +31,16 @@ Der Kontext wächst mit jedem Schritt. Struktur siehe `src/lib/pipeline/types.ts
   compare?: unknown,                  // S4
   styleProfile?: unknown,             // S5
   plan?: { sections: PlanSection[] }, // S6
+  linkPool?: { hub_url, entries[], siblings[], fetches[] },  // S7a
+  linkSearchLog?: SearchLogEntry[],   // S7 Stufe 2
   linkCandidates?: Record<anchor, Candidate[]>,  // S7
   linkSelection?: { anchor, url, confidence }[], // S8
   verifiedLinks?: VerifiedLink[],     // S9
   tables?: { index, markdown }[],     // S10
   content?: { heading, markdown }[],  // S11
+  brokenLinks?: BrokenLink[],         // S9
   qa?: unknown,                       // S12
+  gapReport?: GapReport,              // S13
   exportMarkdown?: string             // S13
 }
 ```

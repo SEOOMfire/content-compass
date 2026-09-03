@@ -5,7 +5,7 @@ Code/das LLM tut) · **Ausgabe** (was gespeichert wird) · **Fehler/Sonderfälle
 
 Implementierung: `src/lib/pipeline/engine.server.ts` (Orchestrierung),
 `extract.server.ts` (Fetch/Parsing/Verifikation), `ai.server.ts` (LLM),
-`retrieval.server.ts` (Hybrid-Retrieval), `crawl.server.ts` (URL-Index).
+`pool.ts` (Pool-Retrieval, Gap-Report), `hub.server.ts` (Hub-Harvesting, Site-Suche).
 Reine, testbare Logik: `schemas.ts` (Zod-Schemas je Schritt), `paths.ts`
 (Pfadübersetzung/hreflang), `tables.ts` (Tabellenprüfung), `plan.ts`
 (Plan → Abschnittseingaben), `deps.ts` (Abhängigkeitsprüfung).
@@ -58,15 +58,28 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 - **Sonderfall:** Existiert keine Zielseite, wird der Schritt übersprungen und
   `{ new_page: true }` gesetzt (Neuerstellung statt Abgleich).
 
+## S7a · Link-Pool aufbauen (`S7a_link_pool`)
+
+- **Eingabe:** `jobs.source_url`, `market.path_map`, `market.domain`, optional
+  `market.search_url_pattern`.
+- **Verarbeitung:** Aus dem DE-Pfad werden über `path_map` Hub-Kandidaten im Zielmarkt
+  gebildet (`/magazin/hund/rassen/mastiff/` → `/magazyn/pies/rasy/`, danach `/magazyn/pies/`).
+  Mit **maximal 8 Abrufen** werden geladen: die erste erreichbare Hub-Seite, die
+  Navigation und bis zu drei Geschwisterartikel (deren Text dient S5 als Stilreferenz).
+  Alle internen Links werden extrahiert, klassifiziert (`hub`, `nav`, `inline`, `footer`)
+  und in `link_pool` persistiert (TTL 7 Tage).
+- **Ausgabe:** `context.linkPool = { hub_url, entries[], siblings[], fetches[] }`.
+- **Kein LLM.** Kein Gesamtindex, kein Sitemap-Crawl.
+
 ## S5 · Stilprofil (`S5_style_profile`)
 
-- **Eingabe:** Cache `style_profiles` (Markt + `content_type = magazine`); sonst bis zu
-  12 Magazin-Einträge aus `url_index` (H1, Meta, Intro).
+- **Eingabe:** Cache `style_profiles` (Markt + `content_type = magazine`); sonst die in
+  S7a geladenen Geschwisterartikel (Volltextauszüge).
 - **Verarbeitung:** Cache-Treffer wird direkt verwendet. Andernfalls Prompt
   `style_profile` über die Referenztexte (max. 12 000 Zeichen) → Tonalität, Satzlänge,
   Ansprache, typische Strukturen. Ergebnis wird im Cache abgelegt.
 - **Ausgabe:** `context.styleProfile`.
-- **Fehler:** Leerer Index → „Keine Referenztexte im Index – bitte zuerst den URL-Index aufbauen."
+- **Fehler:** Keine Geschwisterartikel → S7a erneut ausführen.
 
 ## S6 · Lokalisierungsplan (`S6_localization_plan`)
 
@@ -79,12 +92,15 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 
 ## S7 · Linkkandidaten (`S7_link_candidates`)
 
-- **Eingabe:** Alle Anker aus dem Plan, bis zu 1 000 Einträge aus `url_index` des Markts.
-- **Verarbeitung:** Hybrid-Retrieval (`retrieve`): BM25-artige Termgewichtung über
-  Titel/H1/Breadcrumb/Meta/Intro plus Trigramm-Ähnlichkeit; optionaler Filter auf
-  `path_type`. Pro Anker maximal 8 Kandidaten.
+- **Eingabe:** Alle Anker aus dem Plan, der Link-Pool aus S7a.
+- **Verarbeitung:** Zweistufig. Stufe 1 = Retrieval im Pool (`retrieveFromPool`:
+  Termgewichtung über Ankertext, Slug und Breadcrumb plus Trigramm-Ähnlichkeit,
+  optionaler `path_type`-Filter, max. 8 Kandidaten je Anker). Stufe 2 nur für Anker
+  ohne Treffer: gezielte Site-Suche über `market.search_url_pattern` (bzw. Firecrawl,
+  falls konfiguriert), **maximal 10 Suchanfragen je Job**; Treffer wandern in den Pool.
+  Jede Suche wird in `context.linkSearchLog` protokolliert.
 - **Ausgabe:** `context.linkCandidates` = `{ anker: [{url, title, path_type}] }`.
-- **Kein LLM.** Kandidaten stammen ausschließlich aus dem Index.
+- **Kein LLM.** Kandidaten stammen ausschließlich aus Pool oder Site-Suche.
 
 ## S8 · Linkauswahl (`S8_link_select`)
 
@@ -101,7 +117,9 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 - **Verarbeitung:** Alte `verified_links` des Jobs werden gelöscht (Idempotenz).
   Jede ausgewählte URL wird per GET geprüft: HTTP 200, Canonical passend,
   kein Soft-404. Nur bestandene Links werden gespeichert.
-- **Ausgabe:** `context.verifiedLinks` und Zeilen in `verified_links`.
+- **Ausgabe:** `context.verifiedLinks` und Zeilen in `verified_links` (`source = pool`).
+  Durchgefallene Kandidaten werden aus dem Pool entfernt und als `context.brokenLinks`
+  protokolliert.
 - **Kein LLM.**
 
 ## S10 · Tabellen lokalisieren (`S10_localize_tables`)
@@ -132,10 +150,11 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 
 ## S13 · Export (`S13_export`)
 
-- **Eingabe:** Slug/H1, Quell-URL, Zielstatus, Content-Abschnitte, verifizierte Links,
-  `market.closing_note`.
+- **Eingabe:** Slug/H1, Quell-URL, Zielstatus (inkl. Nachweise), Content-Abschnitte,
+  verifizierte Links, Link-Pool-Metadaten, `market.closing_note`.
 - **Verarbeitung:** Zusammenbau eines Markdown-Dokuments mit Kopfzeilen, Abschnitten,
-  Linkliste (inkl. HTTP-Status) und Marktabschluss.
+  Linkliste (inkl. HTTP-Status), **Gap-Report** (Anker ohne verifizierten Link, verworfene
+  Kandidaten, ob die Site-Suche lief) und Marktabschluss.
 - **Ausgabe:** `context.exportMarkdown`; Step-Output enthält die Zeichenlänge.
   Der Job wird auf `done` gesetzt.
 - **Kein LLM.**
@@ -167,6 +186,8 @@ Guthabenfehler werden gesondert gemeldet. Der tatsächlich gesendete Prompt wird
   `umschreiben`, `streichen`. `streichen` wird in S11 übersprungen.
 - **S2-Eingabe:** das letzte Segment der Quell-URL (`mastiff`); die H1 dient nur
   als Kontext.
+- **Kein Gesamtindex:** S3/S5/S7 arbeiten ausschließlich auf dem Link-Pool. Ein Job
+  wird nie wegen eines leeren Index blockiert.
 - **S3-Ziel-URLs:** der komplette DE-Pfad wird segmentweise über
   `market.path_map` übersetzt (`/magazin/hund/rassen/<slug>/` →
   `/magazyn/pies/rasy/<slug>/`). Ein fehlender Map-Eintrag bricht mit Klartext
