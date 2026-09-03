@@ -243,7 +243,12 @@ export async function runStep(
         .eq("market_id", market.id)
         .eq("path_type", "magazine")
         .limit(12);
-      const referenceTexts = (refs ?? [])
+      const referenceTexts = ((refs ?? []) as Array<{
+        h1: string | null;
+        title: string | null;
+        meta_description: string | null;
+        intro_text: string | null;
+      }>)
         .map((r) => [r.h1, r.meta_description, r.intro_text].filter(Boolean).join("\n"))
         .join("\n---\n");
       if (!referenceTexts.trim()) {
