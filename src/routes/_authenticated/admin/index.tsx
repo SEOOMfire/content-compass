@@ -35,13 +35,24 @@ function IndexAdmin() {
   const [running, setRunning] = useState(false);
 
   const markets = useQuery({
-    queryKey: ["markets-admin"],
+    queryKey: ["markets-index-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("markets").select("*").order("country");
+      const { data, error } = await supabase
+        .from("markets")
+        .select("id,country,language,domain,active,index_last_run,url_index(count)")
+        .order("country");
       if (error) throw error;
-      return data;
+      return data as unknown as {
+        id: string;
+        country: string;
+        language: string;
+        domain: string;
+        index_last_run: string | null;
+        url_index: { count: number }[];
+      }[];
     },
   });
+
 
   const rows = useQuery({
     queryKey: ["url-index", marketId],
@@ -65,6 +76,7 @@ function IndexAdmin() {
       const res = await rebuildIndex({ data: { marketId, limit } });
       toast.success(`${res.indexed} von ${res.discovered} URLs indexiert`);
       await qc.invalidateQueries({ queryKey: ["url-index", marketId] });
+      await qc.invalidateQueries({ queryKey: ["markets-index-stats"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Index-Lauf fehlgeschlagen");
     } finally {
@@ -86,11 +98,12 @@ function IndexAdmin() {
                 <SelectValue placeholder="Markt wählen" />
               </SelectTrigger>
               <SelectContent>
-                {(markets.data ?? []).map((m: { id: string; country: string; language: string; domain: string; active: boolean }) => (
+                {(markets.data ?? []).map((m) => (
                   <SelectItem key={m.id} value={m.id}>
-                    {m.country} · {m.language}
+                    {m.country} · {m.language} ({m.url_index?.[0]?.count ?? 0} URLs)
                   </SelectItem>
                 ))}
+
               </SelectContent>
             </Select>
           </div>
@@ -107,6 +120,40 @@ function IndexAdmin() {
           </Button>
         </CardContent>
       </Card>
+
+      <Card className="border-border bg-surface">
+        <CardHeader>
+          <CardTitle className="text-base">Index-Status je Markt</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          {(markets.data ?? []).map((m) => {
+            const count = m.url_index?.[0]?.count ?? 0;
+            return (
+              <div
+                key={m.id}
+                className="flex items-center justify-between gap-3 border-b border-border py-1"
+              >
+                <span className="truncate">
+                  {m.country} · {m.language}{" "}
+                  <span className="text-xs text-muted-foreground">{m.domain}</span>
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {count === 0 ? (
+                    <span className="text-destructive">kein Index</span>
+                  ) : (
+                    `${count} URLs`
+                  )}
+                  {" · "}
+                  {m.index_last_run
+                    ? new Date(m.index_last_run).toLocaleString("de-DE")
+                    : "nie gelaufen"}
+                </span>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
 
       <Card className="border-border bg-surface">
         <CardHeader>

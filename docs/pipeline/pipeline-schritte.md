@@ -6,6 +6,10 @@ Code/das LLM tut) · **Ausgabe** (was gespeichert wird) · **Fehler/Sonderfälle
 Implementierung: `src/lib/pipeline/engine.server.ts` (Orchestrierung),
 `extract.server.ts` (Fetch/Parsing/Verifikation), `ai.server.ts` (LLM),
 `retrieval.server.ts` (Hybrid-Retrieval), `crawl.server.ts` (URL-Index).
+Reine, testbare Logik: `schemas.ts` (Zod-Schemas je Schritt), `paths.ts`
+(Pfadübersetzung/hreflang), `tables.ts` (Tabellenprüfung), `plan.ts`
+(Plan → Abschnittseingaben), `deps.ts` (Abhängigkeitsprüfung).
+Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 
 ---
 
@@ -151,3 +155,39 @@ Prompts werden mit Variablen gerendert, über das Lovable-AI-Gateway aufgerufen
 extrahiert und bei ungültiger Antwort bis zu dreimal wiederholt. Rate-Limit- und
 Guthabenfehler werden gesondert gemeldet. Der tatsächlich gesendete Prompt wird als
 `prompt_snapshot` am Schritt gespeichert.
+
+---
+
+## Verbindliche Verdrahtungsregeln (Fix-Stufe P0–P2)
+
+- **Schemas:** S2, S6, S8 und S10 werden gegen Zod-Schemas validiert
+  (`schemas.ts`). Ein Schemafehler bricht den Schritt ab; es gibt keinen stillen
+  Fallback auf leere Felder.
+- **Aktionsvokabular:** ausschließlich `uebersetzen`, `lokalisieren`,
+  `umschreiben`, `streichen`. `streichen` wird in S11 übersprungen.
+- **S2-Eingabe:** das letzte Segment der Quell-URL (`mastiff`); die H1 dient nur
+  als Kontext.
+- **S3-Ziel-URLs:** der komplette DE-Pfad wird segmentweise über
+  `market.path_map` übersetzt (`/magazin/hund/rassen/<slug>/` →
+  `/magazyn/pies/rasy/<slug>/`). Ein fehlender Map-Eintrag bricht mit Klartext
+  ab. Ein hreflang-Alternate mit passender Markt-Locale hat Vorrang; sonst wird
+  ein `hreflang_hint` gespeichert und exportiert.
+- **S10:** je Tabelle ein echter LLM-Aufruf, bis zu zwei Retries. Gleiche
+  Zeilenzahl Pflicht; bei nichtdeutscher Zielsprache ist eine identische Ausgabe
+  der Fehler „Tabelle wurde nicht lokalisiert“.
+- **S11-Eingabe:** je Abschnitt ein vollständiges `GenerateSectionInput`
+  (`de_heading`, ungekürzter `de_body`, `target_heading`, `action`, `notes`,
+  `has_table`, `table_markdown`, `written_headings`, `verified_links`,
+  `style_profile`, `market`). Zuordnung über `de_heading`; fehlt die Zuordnung,
+  bricht der Schritt ab. Tabellen gehen nur an Abschnitte mit
+  `has_table === true`, sonst `null`.
+- **Input-Snapshot:** darf gekürzt werden, der Modell-Payload nie.
+- **Abhängigkeiten:** vor jedem Schritt geprüft; fehlt eine Voraussetzung (auch
+  ein leerer URL-Index), wird der Schritt `blocked`.
+- **Jobstatus:** `done` nur, wenn kein Schritt `error` oder `blocked` ist, sonst
+  `done_with_errors`.
+- **Telemetrie:** `run_count` wird vor der Ausführung erhöht; S10/S11 aggregieren
+  Modell und Tokenverbrauch über alle Teilaufrufe.
+- **Unverändert:** das LLM erzeugt nie URLs (S8 wählt nur Kandidatennummern),
+  jede ausgelieferte URL hat HTTP 200 mit passendem Canonical und ohne Soft-404,
+  und `EXISTS`/`VERIFIED_404`/`NOT_IN_INDEX` bleiben getrennt.
