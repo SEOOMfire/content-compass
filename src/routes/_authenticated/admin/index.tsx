@@ -76,6 +76,7 @@ function IndexAdmin() {
       const res = await rebuildIndex({ data: { marketId, limit } });
       toast.success(`${res.indexed} von ${res.discovered} URLs indexiert`);
       await qc.invalidateQueries({ queryKey: ["url-index", marketId] });
+      await qc.invalidateQueries({ queryKey: ["markets-index-stats"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Index-Lauf fehlgeschlagen");
     } finally {

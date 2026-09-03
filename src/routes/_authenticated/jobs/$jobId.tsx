@@ -25,7 +25,9 @@ export const Route = createFileRoute("/_authenticated/jobs/$jobId")({
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   done: "default",
+  done_with_errors: "destructive",
   running: "secondary",
+  blocked: "destructive",
   error: "destructive",
 };
 
@@ -134,6 +136,7 @@ function JobDetail() {
             Zielmarkt:{" "}
             {(job.data?.markets as { country?: string; language?: string } | null)?.country ?? "—"} ·{" "}
             {(job.data?.markets as { language?: string } | null)?.language ?? "—"}
+            {job.data?.status && ` · Job-Status: ${job.data.status}`}
             {target?.status && ` · Zielstatus: ${target.status}`}
             {target?.url && ` (${target.url})`}
           </p>
