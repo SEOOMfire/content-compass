@@ -415,27 +415,54 @@ export async function runStep(
       const plan = ctx.plan?.sections ?? [];
       const anchors = plan.flatMap((s) => s.anchors ?? []);
       if (!anchors.length) throw new Error("S6 hat keine Anker geliefert – S7 kann nichts suchen.");
-      const { data: rows } = await supabaseAdmin
-        .from("url_index")
-        .select("url,title,h1,breadcrumb,meta_description,intro_text,path_type")
-        .eq("market_id", market.id)
-        .limit(1000);
-      const entries = (rows ?? []) as IndexEntry[];
+      const hm = hubMarket(market);
+      const poolEntries: PoolEntry[] = [...(ctx.linkPool?.entries ?? [])];
+      if (!poolEntries.length) throw new Error("Kein Link-Pool vorhanden – bitte S7a ausführen.");
+
       const candidates: Record<string, { url: string; title: string; path_type: string }[]> = {};
+      const log: SearchLogEntry[] = [];
+      let searchBudget = SEARCH_BUDGET;
+
       for (const a of anchors) {
         const query = [a.anchor, ...(a.search_terms ?? []), a.intent ?? ""].filter(Boolean).join(" ");
-        const opts = a.path_type ? { pathType: a.path_type, limit: 8 } : { limit: 8 };
-        let hits = retrieve(query, entries, opts);
-        if (!hits.length && a.path_type) hits = retrieve(query, entries, { limit: 8 });
+        // Stufe 1 · Retrieval im Link-Pool
+        let hits = retrieveFromPool(query, poolEntries, { pathType: a.path_type, limit: 8 });
+        if (!hits.length && a.path_type) hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+
+        // Stufe 2 · gezielte Site-Suche, wenn der Pool zu schwach ist
+        let stage2 = false;
+        let stage2Source: "internal" | "web" | "none" | undefined;
+        if ((!hits.length || (hits[0]?.score ?? 0) < MIN_POOL_SCORE) && searchBudget > 0) {
+          stage2 = true;
+          searchBudget--;
+          const terms = (a.search_terms?.length ? a.search_terms : [a.anchor]).join(" ");
+          const found = await siteSearch(hm, terms);
+          stage2Source = found.source;
+          if (found.entries.length) {
+            found.entries.forEach((e) => {
+              if (!poolEntries.some((p) => p.url === e.url)) poolEntries.push(e);
+            });
+            hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+          }
+        }
+
         candidates[a.anchor] = hits.map((c) => ({
           url: c.url,
           title: c.title,
           path_type: c.path_type,
         }));
+        log.push({
+          anchor: a.anchor,
+          search_terms: a.search_terms ?? [],
+          stage2,
+          ...(stage2Source ? { stage2_source: stage2Source } : {}),
+          hits: hits.length,
+        });
       }
+
       return {
-        output: { anchors: anchors.length, candidates },
-        context: { linkCandidates: candidates },
+        output: { anchors: anchors.length, candidates, search_log: log },
+        context: { linkCandidates: candidates, linkSearchLog: log },
       };
     }
 
