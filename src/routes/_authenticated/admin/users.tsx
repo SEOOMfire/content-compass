@@ -22,19 +22,23 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 
 const ROLES: AppRole[] = ["admin", "editor", "viewer"];
 
+type UserRow = { id: string; email: string; roles: AppRole[] };
+
 function UsersPage() {
   const qc = useQueryClient();
 
   const users = useQuery({
     queryKey: ["users-roles"],
-    queryFn: async () => {
+    queryFn: async (): Promise<UserRow[]> => {
       const [{ data: profiles }, { data: roles }] = await Promise.all([
         supabase.from("profiles").select("id,email").order("email"),
         supabase.from("user_roles").select("user_id,role"),
       ]);
-      return (profiles ?? []).map((p: { id: string; email: string }) => ({
-        ...p,
-        roles: (roles ?? []).filter((r: { user_id: string; role: AppRole }) => r.user_id === p.id).map((r: { user_id: string; role: AppRole }) => r.role as AppRole),
+      const roleRows = (roles ?? []) as { user_id: string; role: AppRole }[];
+      return ((profiles ?? []) as { id: string; email: string }[]).map((p) => ({
+        id: p.id,
+        email: p.email,
+        roles: roleRows.filter((r) => r.user_id === p.id).map((r) => r.role),
       }));
     },
   });
@@ -55,7 +59,7 @@ function UsersPage() {
         <CardTitle className="text-base">Nutzer</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        {(users.data ?? []).map((u) => (
+        {(users.data ?? []).map((u: UserRow) => (
           <div
             key={u.id}
             className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-2"

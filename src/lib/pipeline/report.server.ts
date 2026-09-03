@@ -42,18 +42,45 @@ export async function buildJobReport(jobId: string): Promise<{ filename: string;
   const market = (job as unknown as {
     markets: { country?: string; language?: string; locale?: string; domain?: string; brand?: string } | null;
   }).markets;
+  const jobRow = job as unknown as {
+    id: string;
+    source_url: string;
+    status: string;
+    current_step: string | null;
+    created_at: string;
+    updated_at: string | null;
+  };
   const ctx = ((job as { context?: JobContext }).context ?? {}) as JobContext;
-  const rows = steps ?? [];
+  type StepRow = {
+    step_key: string;
+    status: string;
+    run_count: number | null;
+    duration_ms: number | null;
+    model: string | null;
+    input: unknown;
+    output: unknown;
+    prompt_snapshot: string | null;
+    error: string | null;
+  };
+  type LinkRow = {
+    anchor: string;
+    target_url: string;
+    http_status: number | null;
+    canonical_ok: boolean | null;
+    confidence: string | null;
+  };
+  const rows = (steps ?? []) as unknown as StepRow[];
+  const linkRows = (links ?? []) as unknown as LinkRow[];
   const byKey = new Map(rows.map((s) => [s.step_key, s]));
 
   const out: string[] = [];
-  out.push(`# Prozess-Report · ${job.source_url}`);
+  out.push(`# Prozess-Report · ${jobRow.source_url}`);
   out.push("");
-  out.push(`- **Job-ID:** \`${job.id}\``);
+  out.push(`- **Job-ID:** \`${jobRow.id}\``);
   out.push(`- **Zielmarkt:** ${market?.country ?? "—"} · ${market?.language ?? "—"} · ${market?.domain ?? "—"}`);
-  out.push(`- **Job-Status:** ${job.status}${job.current_step ? ` (aktueller Schritt: ${job.current_step})` : ""}`);
+  out.push(`- **Job-Status:** ${jobRow.status}${jobRow.current_step ? ` (aktueller Schritt: ${jobRow.current_step})` : ""}`);
   out.push(`- **Zielstatus:** ${ctx.target?.status ?? "—"}${ctx.target?.url ? ` (${ctx.target.url})` : ""}`);
-  out.push(`- **Erstellt:** ${job.created_at} · **Aktualisiert:** ${job.updated_at ?? "—"}`);
+  out.push(`- **Erstellt:** ${jobRow.created_at} · **Aktualisiert:** ${jobRow.updated_at ?? "—"}`);
   out.push(`- **Report erzeugt:** ${new Date().toISOString()}`);
   out.push("");
 
@@ -106,12 +133,12 @@ export async function buildJobReport(jobId: string): Promise<{ filename: string;
 
   out.push("## Verifizierte Links");
   out.push("");
-  if (!links?.length) {
+  if (!linkRows.length) {
     out.push("_Keine verifizierten Links._");
   } else {
     out.push("| Anker | Ziel-URL | HTTP | Canonical OK | Konfidenz |");
     out.push("| --- | --- | --- | --- | --- |");
-    for (const l of links) {
+    for (const l of linkRows) {
       out.push(
         `| ${l.anchor} | ${l.target_url} | ${l.http_status} | ${l.canonical_ok ? "ja" : "nein"} | ${l.confidence ?? "—"} |`,
       );
@@ -134,5 +161,5 @@ export async function buildJobReport(jobId: string): Promise<{ filename: string;
     out.push(json(unknownSteps.map((s) => ({ step_key: s.step_key, status: s.status }))));
   }
 
-  return { filename: `job-${job.id}-report.md`, markdown: out.join("\n") };
+  return { filename: `job-${jobRow.id}-report.md`, markdown: out.join("\n") };
 }

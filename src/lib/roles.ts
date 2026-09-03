@@ -16,7 +16,7 @@ export interface RoleFlags {
 
 export async function loadRoleFlags(userId: string): Promise<RoleFlags> {
   const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
-  const roles = ((data ?? []).map((r) => r.role) as AppRole[]) ?? [];
+  const roles = (((data ?? []) as { role: string }[]).map((r) => r.role) as AppRole[]) ?? [];
   const isAdmin = roles.includes("admin");
   return { roles, isAdmin, isEditor: isAdmin || roles.includes("editor") };
 }
