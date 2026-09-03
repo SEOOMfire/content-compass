@@ -462,3 +462,87 @@ async function upsertStep(
       .insert({ job_id: jobId, step_key: stepKey, step_order: order, ...patch } as never);
   }
 }
+
+/** Kompakter Snapshot dessen, was ein Schritt als Eingabe erhalten hat. */
+function describeStepInput(
+  stepKey: string,
+  ctx: JobContext,
+  market: MarketRow,
+  sourceUrl: string,
+): Record<string, unknown> {
+  const marketInfo = {
+    country: market.country,
+    language: market.language,
+    domain: market.domain,
+    brand: market.brand,
+    magazine_root: market.magazine_root,
+  };
+  const clip = (s: string | null | undefined, n = 1500) =>
+    s ? (s.length > n ? `${s.slice(0, n)}… [gekürzt]` : s) : null;
+
+  switch (stepKey) {
+    case "S1_extract_source":
+      return { source_url: sourceUrl, market: marketInfo };
+    case "S2_resolve_slug":
+      return {
+        market: marketInfo,
+        term: ctx.source?.h1 ?? ctx.source?.title ?? sourceUrl,
+      };
+    case "S3_target_status":
+      return { market: marketInfo, slug: ctx.slug };
+    case "S4_compare":
+      return {
+        de_outline: clip(ctx.source?.outline),
+        de_word_count: ctx.source?.wordCount,
+        target_status: ctx.target?.status,
+        target_url: ctx.target?.url,
+        target_outline: clip(ctx.target?.doc?.outline ?? null),
+      };
+    case "S5_style_profile":
+      return { market: marketInfo, content_type: "magazine" };
+    case "S6_localization_plan":
+      return {
+        market: marketInfo,
+        institutions: market.institutions,
+        forbidden_claims: market.forbidden_claims,
+        de_sections: ctx.source?.sections.map((s) => s.heading),
+      };
+    case "S7_link_candidates":
+      return {
+        market: marketInfo,
+        anchors: (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []),
+      };
+    case "S8_link_select":
+      return { candidates: ctx.linkCandidates };
+    case "S9_link_verify":
+      return { selection: ctx.linkSelection };
+    case "S10_localize_tables":
+      return {
+        market: marketInfo,
+        tables: (ctx.source?.tables ?? []).map((t) => ({ index: t.index, preview: clip(t.markdown, 400) })),
+      };
+    case "S11_generate_content":
+      return {
+        market: marketInfo,
+        plan_sections: (ctx.plan?.sections ?? []).map((s) => ({ heading: s.heading, action: s.action })),
+        verified_links: ctx.verifiedLinks?.map((l) => l.target_url),
+        localized_tables: ctx.tables?.length ?? 0,
+        style_profile_present: Boolean(ctx.styleProfile),
+      };
+    case "S12_qa":
+      return {
+        market: marketInfo,
+        forbidden_claims: market.forbidden_claims,
+        content_sections: (ctx.content ?? []).map((c) => c.heading),
+        word_count: (ctx.content ?? []).map((c) => c.markdown).join(" ").split(/\s+/).length,
+      };
+    case "S13_export":
+      return {
+        headings: (ctx.content ?? []).map((c) => c.heading),
+        verified_links: ctx.verifiedLinks?.length ?? 0,
+        target_status: ctx.target?.status,
+      };
+    default:
+      return {};
+  }
+}
