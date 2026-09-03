@@ -1,8 +1,11 @@
+import type { GapEntry, PoolEntry, SearchLogEntry } from "./pool";
+
 export type StepKey =
   | "S1_extract_source"
   | "S2_resolve_slug"
   | "S3_target_status"
   | "S4_compare"
+  | "S7a_link_pool"
   | "S5_style_profile"
   | "S6_localization_plan"
   | "S7_link_candidates"
@@ -40,7 +43,8 @@ export const PIPELINE: StepDef[] = [
     key: "S3_target_status",
     order: 3,
     label: "S3 · Zielstatus prüfen",
-    description: "EXISTS / VERIFIED_404 / NOT_IN_INDEX anhand Index und Live-Abruf bestimmen.",
+    description:
+      "EXISTS / VERIFIED_404 / NOT_IN_INDEX über hreflang, Hub-Liste und Live-Abruf bestimmen.",
   },
   {
     key: "S4_compare",
@@ -50,64 +54,71 @@ export const PIPELINE: StepDef[] = [
     description: "Vorhandenen Zielinhalt mit der deutschen Quelle vergleichen (Lücken).",
   },
   {
-    key: "S5_style_profile",
+    key: "S7a_link_pool",
     order: 5,
+    label: "S7a · Link-Pool aufbauen",
+    description:
+      "Hub-Seite, Navigation und Geschwisterartikel des Zielmarkts abrufen (max. 8 Abrufe).",
+  },
+  {
+    key: "S5_style_profile",
+    order: 6,
     label: "S5 · Stilprofil",
     promptKey: "style_profile",
-    description: "Stilprofil des Zielmarkts aus Referenztexten ableiten (gecached).",
+    description: "Stilprofil aus den Geschwisterartikeln des Link-Pools ableiten (gecached).",
   },
   {
     key: "S6_localization_plan",
-    order: 6,
+    order: 7,
     label: "S6 · Lokalisierungsplan",
     promptKey: "localization_plan",
     description: "Abschnittsweiser Plan mit Aktion (keep/adapt/replace/drop) je Abschnitt.",
   },
   {
     key: "S7_link_candidates",
-    order: 7,
+    order: 8,
     label: "S7 · Linkkandidaten",
-    description: "Hybrid-Retrieval aus dem Ziel-URL-Index je geplantem Anker.",
+    description: "Zweistufig: Retrieval im Link-Pool, danach gezielte Site-Suche für Lücken.",
   },
   {
     key: "S8_link_select",
-    order: 8,
+    order: 9,
     label: "S8 · Linkauswahl",
     promptKey: "link_select",
     description: "LLM wählt nur aus Kandidatennummern – niemals freie URLs.",
   },
   {
     key: "S9_link_verify",
-    order: 9,
+    order: 10,
     label: "S9 · Linkprüfung",
     description: "Jede ausgewählte URL per GET prüfen: 200, Canonical, kein Soft-404.",
   },
   {
     key: "S10_localize_tables",
-    order: 10,
+    order: 11,
     label: "S10 · Tabellen lokalisieren",
     promptKey: "localize_table",
     description: "Tabellen übersetzen und Einheiten/Normen an den Zielmarkt anpassen.",
   },
   {
     key: "S11_generate_content",
-    order: 11,
+    order: 12,
     label: "S11 · Content erzeugen",
     promptKey: "generate_content",
     description: "Abschnittsweise Texterzeugung mit Stilprofil und verifizierten Links.",
   },
   {
     key: "S12_qa",
-    order: 12,
+    order: 13,
     label: "S12 · QA",
     promptKey: "qa",
     description: "Sprach-, Marken- und Claim-Prüfung des Gesamttexts.",
   },
   {
     key: "S13_export",
-    order: 13,
+    order: 14,
     label: "S13 · Export",
-    description: "Markdown-Export inklusive Metadaten und Linkliste.",
+    description: "Markdown-Export inklusive Metadaten, Linkliste und Gap-Report.",
   },
 ];
 
@@ -179,9 +190,24 @@ export interface JobContext {
     url: string | null;
     checked: { url: string; status: number }[];
     doc?: SourceDoc | null;
-    resolution_method?: "hreflang" | "slug";
+    resolution_method?: "hreflang" | "hub" | "slug";
     hreflang_hint?: string | null;
+    /** Nachweiskette der Zielermittlung (hreflang, Hub-Treffer, HTTP-Prüfungen). */
+    evidence?: { step: string; detail: string }[];
   };
+  /** S7a · Link-Pool statt Gesamtindex. */
+  linkPool?: {
+    hub_url: string | null;
+    built_at: string;
+    fetches: { url: string; status: number; links: number; role: string }[];
+    entries: PoolEntry[];
+    siblings: { url: string; title: string | null; text: string }[];
+  };
+  /** Protokoll der zweistufigen Kandidatensuche (S7). */
+  linkSearchLog?: SearchLogEntry[];
+  /** Poolkandidaten, die die HTTP-Prüfung in S9 nicht bestanden haben. */
+  brokenLinks?: { anchor: string; url: string; http_status: number; reason: string }[];
+  gapReport?: GapEntry[];
   compare?: unknown;
   styleProfile?: unknown;
   plan?: { sections: PlanSection[] };

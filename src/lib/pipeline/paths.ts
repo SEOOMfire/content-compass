@@ -113,3 +113,22 @@ export function hreflangHint(
     `Starkes Indiz, dass die Zielseite nicht existiert.`
   );
 }
+
+/**
+ * Hub-Kandidaten für S7a: Elternpfad der Quell-URL über path_map übersetzt,
+ * danach eine Ebene höher als Fallback.
+ * /magazin/hund/rassen/mastiff/ → /magazyn/pies/rasy/ , /magazyn/pies/
+ */
+export function buildHubUrls(sourceUrl: string, market: MarketPathInfo): string[] {
+  const segs = pathSegments(sourceUrl).slice(0, -1);
+  if (!segs.length) throw new PathMapError(["(kein Elternpfad in der Quell-URL)"]);
+  const map = pathMapOf(market);
+  const missing = segs.filter((s) => !map[s.toLowerCase()]);
+  if (missing.length) throw new PathMapError(missing);
+  const translated = segs.map((s) => map[s.toLowerCase()]!);
+  const out: string[] = [];
+  for (let i = translated.length; i >= 1; i--) {
+    out.push(`${origin(market.domain)}/${translated.slice(0, i).join("/")}/`);
+  }
+  return out;
+}

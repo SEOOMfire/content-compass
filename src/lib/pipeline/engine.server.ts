@@ -8,7 +8,22 @@ import {
 } from "./types";
 import { extractPage, verifyUrl } from "./extract.server";
 import { runPrompt, type PromptTemplateRow } from "./ai.server";
-import { retrieve, type IndexEntry } from "./retrieval.server";
+import {
+  buildGapReport,
+  matchHubEntry,
+  retrieveFromPool,
+  MIN_POOL_SCORE,
+  type PoolEntry,
+  type SearchLogEntry,
+} from "./pool";
+import {
+  buildLinkPool,
+  fetchHubEntries,
+  siteSearch,
+  SEARCH_BUDGET,
+  POOL_TTL_MS,
+  type HubMarket,
+} from "./hub.server";
 import {
   S2OutputSchema,
   S6OutputSchema,
@@ -68,12 +83,18 @@ export interface StepRunResult {
   tokensOut?: number;
 }
 
-async function marketIndexCount(marketId: string): Promise<number> {
-  const { count } = await supabaseAdmin
-    .from("url_index")
-    .select("id", { count: "exact", head: true })
-    .eq("market_id", marketId);
-  return count ?? 0;
+function hubMarket(market: MarketRow): HubMarket {
+  return {
+    id: market.id,
+    domain: market.domain,
+    locale: market.locale,
+    language: market.language,
+    path_map: market.path_map,
+    magazine_root: market.magazine_root,
+    category_root: market.category_root,
+    crawl_delay_ms: (market["crawl_delay_ms"] as number | null) ?? null,
+    search_url_pattern: (market["search_url_pattern"] as string | null) ?? null,
+  };
 }
 
 export async function runStep(
@@ -149,25 +170,69 @@ export async function runStep(
       const slug = ctx.slug;
       if (!slug) throw new Error("Schritt S2 muss zuerst laufen.");
       const hint = hreflangHint(source.hreflang, market.locale);
-      const viaHreflang = Boolean(ctx.hreflangTargetUrl);
-      const urls = viaHreflang
-        ? [ctx.hreflangTargetUrl!]
-        : buildTargetUrls(job.source_url, market, slug.slug_candidates);
-
-      const { data: indexHits } = await supabaseAdmin
-        .from("url_index")
-        .select("url")
-        .eq("market_id", market.id)
-        .in("url", urls);
-
+      const evidence: { step: string; detail: string }[] = [];
       const checked: { url: string; status: number }[] = [];
       let found: string | null = null;
-      for (const url of urls) {
-        const v = await verifyUrl(url);
-        checked.push({ url, status: v.http_status });
-        if (v.ok) {
-          found = url;
-          break;
+      let method: "hreflang" | "hub" | "slug" = "slug";
+
+      // Stufe 1 · hreflang-Alternate
+      if (ctx.hreflangTargetUrl) {
+        method = "hreflang";
+        evidence.push({ step: "hreflang", detail: `Alternate der Quellseite: ${ctx.hreflangTargetUrl}` });
+        const v = await verifyUrl(ctx.hreflangTargetUrl);
+        checked.push({ url: ctx.hreflangTargetUrl, status: v.http_status });
+        if (v.ok) found = ctx.hreflangTargetUrl;
+      } else if (hint) {
+        evidence.push({ step: "hreflang", detail: hint });
+      }
+
+      // Stufe 2 · Treffer in der Hub-Liste des Zielmarkts (ersetzt den Gesamtindex)
+      let hubEntries: PoolEntry[] = ctx.linkPool?.entries ?? [];
+      let hubUrl = ctx.linkPool?.hub_url ?? null;
+      if (!found && !hubEntries.length) {
+        const hub = await fetchHubEntries(hubMarket(market), job.source_url);
+        hubEntries = hub.entries;
+        hubUrl = hub.hub_url;
+        evidence.push({
+          step: "hub",
+          detail: hub.hub_url
+            ? `Hub-Seite ${hub.hub_url} geladen (${hub.entries.length} Links).`
+            : "Keine Hub-Seite erreichbar.",
+        });
+      }
+      if (!found && hubEntries.length) {
+        const match = matchHubEntry(hubEntries, slug.term_translated, slug.slug_candidates);
+        if (match) {
+          evidence.push({
+            step: "hub",
+            detail: `Hub-Treffer „${match.entry.anchor_text ?? match.entry.url}" (Ähnlichkeit ${match.score.toFixed(2)}).`,
+          });
+          const v = await verifyUrl(match.entry.url);
+          checked.push({ url: match.entry.url, status: v.http_status });
+          if (v.ok) {
+            found = match.entry.url;
+            method = "hub";
+          }
+        } else if (hubUrl) {
+          evidence.push({
+            step: "hub",
+            detail: `Kein passender Eintrag in der Hub-Liste (${hubEntries.length} Links geprüft).`,
+          });
+        }
+      }
+
+      // Stufe 3 · Slug-Kandidaten über path_map, live geprüft
+      if (!found) {
+        const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates);
+        for (const url of urls) {
+          const v = await verifyUrl(url);
+          checked.push({ url, status: v.http_status });
+          evidence.push({ step: "slug", detail: `${url} → HTTP ${v.http_status}` });
+          if (v.ok) {
+            found = url;
+            method = "slug";
+            break;
+          }
         }
       }
 
@@ -175,9 +240,7 @@ export async function runStep(
         ? "EXISTS"
         : checked.some((c) => c.status === 404)
           ? "VERIFIED_404"
-          : (indexHits?.length ?? 0) === 0
-            ? "NOT_IN_INDEX"
-            : "VERIFIED_404";
+          : "NOT_IN_INDEX";
 
       const doc = found ? await extractPage(found) : null;
       const target = {
@@ -185,11 +248,12 @@ export async function runStep(
         url: found,
         checked,
         doc,
-        resolution_method: (viaHreflang ? "hreflang" : "slug") as "hreflang" | "slug",
+        resolution_method: method,
         hreflang_hint: hint,
+        evidence,
       };
       return {
-        output: { status, url: found, checked, resolution_method: target.resolution_method, hreflang_hint: hint },
+        output: { status, url: found, checked, resolution_method: method, hreflang_hint: hint, evidence },
         context: { target },
       };
     }
