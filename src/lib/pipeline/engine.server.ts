@@ -521,11 +521,26 @@ export async function runStep(
     case "S9_link_verify": {
       const selection = ctx.linkSelection ?? [];
       const verified: JobContext["verifiedLinks"] = [];
+      const broken: NonNullable<JobContext["brokenLinks"]> = [];
       await supabaseAdmin.from("verified_links").delete().eq("job_id", job.id);
       for (const s of selection) {
         if (!s.url) continue;
         const v = await verifyUrl(s.url);
-        if (!v.ok || v.http_status !== 200 || !v.canonical_ok) continue;
+        if (!v.ok || v.http_status !== 200 || !v.canonical_ok) {
+          broken.push({
+            anchor: s.anchor,
+            url: s.url,
+            http_status: v.http_status,
+            reason: v.http_status !== 200 ? `HTTP ${v.http_status}` : "Canonical/Soft-404",
+          });
+          // Toter Poolkandidat: aus dem Pool entfernen, damit er nicht erneut gewählt wird.
+          await supabaseAdmin
+            .from("link_pool")
+            .delete()
+            .eq("market_id", market.id)
+            .eq("url", s.url);
+          continue;
+        }
         const row = {
           anchor: s.anchor,
           target_url: s.url,
@@ -534,9 +549,12 @@ export async function runStep(
           ...(s.confidence ? { confidence: s.confidence } : {}),
         };
         verified.push(row);
-        await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "index", ...row });
+        await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "pool", ...row });
       }
-      return { output: verified, context: { verifiedLinks: verified } };
+      return {
+        output: { verified, broken },
+        context: { verifiedLinks: verified, brokenLinks: broken },
+      };
     }
 
     case "S10_localize_tables": {
