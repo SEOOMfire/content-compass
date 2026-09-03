@@ -719,8 +719,7 @@ export async function executeStep(jobId: string, stepKey: string) {
   const context = ((job as { context?: JobContext }).context ?? {}) as JobContext;
 
   // P2-1: Voraussetzungen prüfen, bevor irgendetwas läuft.
-  const indexCount = await marketIndexCount(market.id);
-  const blocker = dependencyBlocker(def.key, context, indexCount);
+  const blocker = dependencyBlocker(def.key, context);
   if (blocker) {
     await upsertStep(jobId, def.key, def.order, {
       status: "blocked",
