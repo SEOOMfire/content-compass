@@ -913,8 +913,18 @@ function describeStepInput(
         target_url: ctx.target?.url,
         target_outline: clip(ctx.target?.doc?.outline ?? null),
       };
+    case "S7a_link_pool":
+      return {
+        market: marketInfo,
+        source_url: ctx.source?.url ?? null,
+        hub_candidates: ctx.linkPool?.hub_url ?? null,
+      };
     case "S5_style_profile":
-      return { market: marketInfo, content_type: "magazine" };
+      return {
+        market: marketInfo,
+        content_type: "magazine",
+        sibling_urls: (ctx.linkPool?.siblings ?? []).map((s) => s.url),
+      };
     case "S6_localization_plan":
       return {
         market: marketInfo,
@@ -926,6 +936,8 @@ function describeStepInput(
       return {
         market: marketInfo,
         anchors: (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []),
+        pool_size: ctx.linkPool?.entries.length ?? 0,
+        search_runs: ctx.linkSearchLog?.length ?? 0,
       };
     case "S8_link_select":
       return { candidates: ctx.linkCandidates };
