@@ -395,7 +395,11 @@ export async function executeStep(jobId: string, stepKey: string) {
   const context = ((job as { context?: JobContext }).context ?? {}) as JobContext;
 
   const started = Date.now();
-  await upsertStep(jobId, def.key, def.order, { status: "running", error: null });
+  await upsertStep(jobId, def.key, def.order, {
+    status: "running",
+    error: null,
+    input: describeStepInput(def.key, context, market, job.source_url) as never,
+  });
   await supabaseAdmin.from("jobs").update({ current_step: def.key, status: "running" }).eq("id", jobId);
 
   try {
