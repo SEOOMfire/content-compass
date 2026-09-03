@@ -26,6 +26,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"login" | "signup">("login");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -37,6 +38,17 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/jobs` },
+        });
+        if (error) throw error;
+        toast.success("Konto angelegt. Bitte anmelden (ggf. E-Mail bestätigen).");
+        setMode("login");
+        return;
+      }
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast.success("Angemeldet");
@@ -47,6 +59,7 @@ function AuthPage() {
       setLoading(false);
     }
   }
+
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
