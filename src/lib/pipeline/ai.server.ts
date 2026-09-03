@@ -25,13 +25,18 @@ function apiKey(): string {
   return key;
 }
 
+export interface Usage {
+  tokensIn: number;
+  tokensOut: number;
+}
+
 async function callChat(
   model: string,
   system: string,
   user: string,
   temperature: number,
   maxTokens: number,
-): Promise<string> {
+): Promise<{ text: string; usage: Usage }> {
   const res = await fetch(`${GATEWAY}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey()}` },
@@ -46,11 +51,24 @@ async function callChat(
     }),
   });
   if (!res.ok) throw await gatewayError(res);
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  return json.choices?.[0]?.message?.content ?? "";
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  return {
+    text: json.choices?.[0]?.message?.content ?? "",
+    usage: {
+      tokensIn: json.usage?.prompt_tokens ?? 0,
+      tokensOut: json.usage?.completion_tokens ?? 0,
+    },
+  };
 }
 
-async function callResponses(model: string, system: string, user: string): Promise<string> {
+async function callResponses(
+  model: string,
+  system: string,
+  user: string,
+): Promise<{ text: string; usage: Usage }> {
   const res = await fetch(`${GATEWAY}/responses`, {
     method: "POST",
     headers: {
@@ -68,7 +86,8 @@ async function callResponses(model: string, system: string, user: string): Promi
   });
   if (!res.ok) throw await gatewayError(res);
   const reader = res.body?.getReader();
-  if (!reader) return "";
+  const usage: Usage = { tokensIn: 0, tokensOut: 0 };
+  if (!reader) return { text: "", usage };
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
@@ -84,16 +103,24 @@ async function callResponses(model: string, system: string, user: string): Promi
       const payload = line.slice(5).trim();
       if (!payload || payload === "[DONE]") continue;
       try {
-        const evt = JSON.parse(payload) as { type?: string; delta?: string };
+        const evt = JSON.parse(payload) as {
+          type?: string;
+          delta?: string;
+          response?: { usage?: { input_tokens?: number; output_tokens?: number } };
+        };
         if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
           text += evt.delta;
+        }
+        if (evt.response?.usage) {
+          usage.tokensIn = evt.response.usage.input_tokens ?? usage.tokensIn;
+          usage.tokensOut = evt.response.usage.output_tokens ?? usage.tokensOut;
         }
       } catch {
         /* ignore keepalives */
       }
     }
   }
-  return text;
+  return { text, usage };
 }
 
 async function gatewayError(res: Response): Promise<Error> {
@@ -126,6 +153,8 @@ export interface LlmResult<T> {
   raw: string;
   model: string;
   promptSnapshot: string;
+  tokensIn: number;
+  tokensOut: number;
 }
 
 export async function runPrompt<T = unknown>(
@@ -141,12 +170,19 @@ export async function runPrompt<T = unknown>(
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const raw = useResponses
+      const { text: raw, usage } = useResponses
         ? await callResponses(tpl.model, system, user)
         : await callChat(tpl.model, system, user, temperature, maxTokens);
       const data =
         tpl.response_format === "json" ? (extractJson(raw) as T) : ((raw as unknown) as T);
-      return { data, raw, model: tpl.model, promptSnapshot: `SYSTEM:\n${system}\n\nUSER:\n${user}` };
+      return {
+        data,
+        raw,
+        model: tpl.model,
+        promptSnapshot: `SYSTEM:\n${system}\n\nUSER:\n${user}`,
+        tokensIn: usage.tokensIn,
+        tokensOut: usage.tokensOut,
+      };
     } catch (err) {
       lastError = err;
       const msg = err instanceof Error ? err.message : "";

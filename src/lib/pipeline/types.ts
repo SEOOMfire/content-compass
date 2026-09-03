@@ -144,11 +144,22 @@ export interface SourceDoc {
   outline: string;
 }
 
+export type PlanAction = "uebersetzen" | "lokalisieren" | "umschreiben" | "streichen";
+
+export interface PlanAnchor {
+  anchor: string;
+  intent: string;
+  search_terms: string[];
+  path_type?: string | undefined;
+}
+
 export interface PlanSection {
-  heading: string;
-  action: "keep" | "adapt" | "replace" | "drop";
-  notes: string;
-  anchors?: { anchor: string; intent: string; path_type?: string }[];
+  de_heading: string;
+  target_heading: string;
+  action: PlanAction;
+  notes: string[];
+  has_table: boolean;
+  anchors: PlanAnchor[];
 }
 
 export interface VerifiedLink {
@@ -162,11 +173,14 @@ export interface VerifiedLink {
 export interface JobContext {
   source?: SourceDoc;
   slug?: { term_translated: string; slug_candidates: string[] };
+  hreflangTargetUrl?: string | null;
   target?: {
     status: TargetStatus;
     url: string | null;
     checked: { url: string; status: number }[];
     doc?: SourceDoc | null;
+    resolution_method?: "hreflang" | "slug";
+    hreflang_hint?: string | null;
   };
   compare?: unknown;
   styleProfile?: unknown;
@@ -179,3 +193,4 @@ export interface JobContext {
   qa?: unknown;
   exportMarkdown?: string;
 }
+
