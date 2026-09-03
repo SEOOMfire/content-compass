@@ -94,8 +94,16 @@ function AuthPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "…" : "Anmelden"}
+              {loading ? "…" : mode === "login" ? "Anmelden" : "Konto anlegen"}
             </Button>
+            <button
+              type="button"
+              className="w-full text-xs text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setMode(mode === "login" ? "signup" : "login")}
+            >
+              {mode === "login" ? "Neues internes Konto anlegen" : "Zurück zur Anmeldung"}
+            </button>
+
           </form>
         </CardContent>
       </Card>
