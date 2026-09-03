@@ -83,6 +83,19 @@ export interface StepRunResult {
   tokensOut?: number;
 }
 
+function chunked<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function countBy(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((acc, v) => {
+    acc[v] = (acc[v] ?? 0) + 1;
+    return acc;
+  }, {});
+}
+
 function hubMarket(market: MarketRow): HubMarket {
   return {
     id: market.id,
