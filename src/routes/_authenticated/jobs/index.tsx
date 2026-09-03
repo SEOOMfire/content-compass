@@ -132,17 +132,23 @@ function JobsPage() {
                   <SelectValue placeholder="Markt wählen" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(markets.data ?? []).map((m: { id: string; country: string; language: string }) => (
+                  {marketList.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
-                      {m.country} · {m.language}
+                      {m.country} · {m.language} ({m.url_index?.[0]?.count ?? 0} URLs)
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {indexMissing && (
+                <p className="text-xs text-destructive">
+                  Kein URL-Index für diesen Markt – bitte zuerst im Admin „URL-Index“ aufbauen.
+                </p>
+              )}
             </div>
-            <Button type="submit" disabled={creating}>
+            <Button type="submit" disabled={creating || indexMissing}>
               {creating ? "…" : "Job anlegen"}
             </Button>
+
           </form>
         </CardContent>
       </Card>
