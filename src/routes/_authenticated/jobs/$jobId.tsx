@@ -100,6 +100,24 @@ function JobDetail() {
     }
   }
 
+  async function downloadReport() {
+    setBusy("report");
+    try {
+      const { filename, markdown } = await exportJobReport({ data: { jobId } });
+      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Prozess-Report heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Report fehlgeschlagen");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const ctx = (job.data?.context ?? {}) as Record<string, unknown>;
   const target = ctx["target"] as { status?: string; url?: string | null } | undefined;
   const exportMd = ctx["exportMarkdown"] as string | undefined;
