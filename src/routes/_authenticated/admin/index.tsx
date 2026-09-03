@@ -97,11 +97,12 @@ function IndexAdmin() {
                 <SelectValue placeholder="Markt wählen" />
               </SelectTrigger>
               <SelectContent>
-                {(markets.data ?? []).map((m: { id: string; country: string; language: string; domain: string; active: boolean }) => (
+                {(markets.data ?? []).map((m) => (
                   <SelectItem key={m.id} value={m.id}>
-                    {m.country} · {m.language}
+                    {m.country} · {m.language} ({m.url_index?.[0]?.count ?? 0} URLs)
                   </SelectItem>
                 ))}
+
               </SelectContent>
             </Select>
           </div>
