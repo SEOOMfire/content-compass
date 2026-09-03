@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/jobs/")({
   head: () => ({
@@ -114,7 +113,7 @@ function JobsPage() {
                   <SelectValue placeholder="Markt wählen" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(markets.data ?? []).map((m: Tables<"markets">) => (
+                  {(markets.data ?? []).map((m: { id: string; country: string; language: string }) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.country} · {m.language}
                     </SelectItem>
@@ -138,7 +137,7 @@ function JobsPage() {
           {(jobs.data ?? []).length === 0 && !jobs.isLoading && (
             <p className="text-sm text-muted-foreground">Noch keine Jobs vorhanden.</p>
           )}
-          {(jobs.data ?? []).map((j: Tables<"jobs">) => (
+          {(jobs.data ?? []).map((j: { id: string; source_url: string; status: string; current_step: string | null; created_at: string; markets: { country: string; language: string } | null }) => (
             <Link
               key={j.id}
               to="/jobs/$jobId"
