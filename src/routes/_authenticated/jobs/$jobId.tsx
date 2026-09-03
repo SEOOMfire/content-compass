@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Play, RefreshCw, ChevronDown } from "lucide-react";
+import { Play, RefreshCw, ChevronDown, FileDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { runStepFn, runFromStepFn } from "@/lib/pipeline.functions";
+import { runStepFn, runFromStepFn, exportJobReport } from "@/lib/pipeline.functions";
 import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,6 +100,24 @@ function JobDetail() {
     }
   }
 
+  async function downloadReport() {
+    setBusy("report");
+    try {
+      const { filename, markdown } = await exportJobReport({ data: { jobId } });
+      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Prozess-Report heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Report fehlgeschlagen");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const ctx = (job.data?.context ?? {}) as Record<string, unknown>;
   const target = ctx["target"] as { status?: string; url?: string | null } | undefined;
   const exportMd = ctx["exportMarkdown"] as string | undefined;
@@ -122,6 +140,10 @@ function JobDetail() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={refresh} size="icon" aria-label="Aktualisieren">
             <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" onClick={downloadReport} disabled={busy !== null}>
+            <FileDown className="mr-2 h-4 w-4" />
+            {busy === "report" ? "Erstelle…" : "Prozess-Report (.md)"}
           </Button>
           <Button onClick={() => runAll()} disabled={busy !== null}>
             <Play className="mr-2 h-4 w-4" /> Komplett ausführen

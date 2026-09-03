@@ -52,6 +52,14 @@ export const runStepFn = createServerFn({ method: "POST" })
     };
   });
 
+export const exportJobReport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { buildJobReport } = await import("@/lib/pipeline/report.server");
+    return await buildJobReport(data.jobId);
+  });
+
 export const runFromStepFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
