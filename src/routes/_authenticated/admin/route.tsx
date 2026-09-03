@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 const TABS = [
   { to: "/admin/prompts", label: "Prompts" },
   { to: "/admin/markets", label: "Märkte" },
-  { to: "/admin", label: "URL-Index" },
+  { to: "/admin", label: "Link-Pool" },
   { to: "/admin/users", label: "Nutzer" },
 ] as const;
 
@@ -20,7 +20,7 @@ function AdminLayout() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Administration</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Prompts, Märkte, URL-Index und Rollen verwalten.
+          Prompts, Märkte, Link-Pool und Rollen verwalten.
         </p>
       </div>
       <nav className="flex flex-wrap gap-1 border-b border-border">

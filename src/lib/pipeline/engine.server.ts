@@ -8,7 +8,22 @@ import {
 } from "./types";
 import { extractPage, verifyUrl } from "./extract.server";
 import { runPrompt, type PromptTemplateRow } from "./ai.server";
-import { retrieve, type IndexEntry } from "./retrieval.server";
+import {
+  buildGapReport,
+  matchHubEntry,
+  retrieveFromPool,
+  MIN_POOL_SCORE,
+  type PoolEntry,
+  type SearchLogEntry,
+} from "./pool";
+import {
+  buildLinkPool,
+  fetchHubEntries,
+  siteSearch,
+  SEARCH_BUDGET,
+  POOL_TTL_MS,
+  type HubMarket,
+} from "./hub.server";
 import {
   S2OutputSchema,
   S6OutputSchema,
@@ -68,12 +83,31 @@ export interface StepRunResult {
   tokensOut?: number;
 }
 
-async function marketIndexCount(marketId: string): Promise<number> {
-  const { count } = await supabaseAdmin
-    .from("url_index")
-    .select("id", { count: "exact", head: true })
-    .eq("market_id", marketId);
-  return count ?? 0;
+function chunked<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function countBy(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((acc, v) => {
+    acc[v] = (acc[v] ?? 0) + 1;
+    return acc;
+  }, {});
+}
+
+function hubMarket(market: MarketRow): HubMarket {
+  return {
+    id: market.id,
+    domain: market.domain,
+    locale: market.locale,
+    language: market.language,
+    path_map: market.path_map,
+    magazine_root: market.magazine_root,
+    category_root: market.category_root,
+    crawl_delay_ms: (market["crawl_delay_ms"] as number | null) ?? null,
+    search_url_pattern: (market["search_url_pattern"] as string | null) ?? null,
+  };
 }
 
 export async function runStep(
@@ -149,25 +183,69 @@ export async function runStep(
       const slug = ctx.slug;
       if (!slug) throw new Error("Schritt S2 muss zuerst laufen.");
       const hint = hreflangHint(source.hreflang, market.locale);
-      const viaHreflang = Boolean(ctx.hreflangTargetUrl);
-      const urls = viaHreflang
-        ? [ctx.hreflangTargetUrl!]
-        : buildTargetUrls(job.source_url, market, slug.slug_candidates);
-
-      const { data: indexHits } = await supabaseAdmin
-        .from("url_index")
-        .select("url")
-        .eq("market_id", market.id)
-        .in("url", urls);
-
+      const evidence: { step: string; detail: string }[] = [];
       const checked: { url: string; status: number }[] = [];
       let found: string | null = null;
-      for (const url of urls) {
-        const v = await verifyUrl(url);
-        checked.push({ url, status: v.http_status });
-        if (v.ok) {
-          found = url;
-          break;
+      let method: "hreflang" | "hub" | "slug" = "slug";
+
+      // Stufe 1 · hreflang-Alternate
+      if (ctx.hreflangTargetUrl) {
+        method = "hreflang";
+        evidence.push({ step: "hreflang", detail: `Alternate der Quellseite: ${ctx.hreflangTargetUrl}` });
+        const v = await verifyUrl(ctx.hreflangTargetUrl);
+        checked.push({ url: ctx.hreflangTargetUrl, status: v.http_status });
+        if (v.ok) found = ctx.hreflangTargetUrl;
+      } else if (hint) {
+        evidence.push({ step: "hreflang", detail: hint });
+      }
+
+      // Stufe 2 · Treffer in der Hub-Liste des Zielmarkts (ersetzt den Gesamtindex)
+      let hubEntries: PoolEntry[] = ctx.linkPool?.entries ?? [];
+      let hubUrl = ctx.linkPool?.hub_url ?? null;
+      if (!found && !hubEntries.length) {
+        const hub = await fetchHubEntries(hubMarket(market), job.source_url);
+        hubEntries = hub.entries;
+        hubUrl = hub.hub_url;
+        evidence.push({
+          step: "hub",
+          detail: hub.hub_url
+            ? `Hub-Seite ${hub.hub_url} geladen (${hub.entries.length} Links).`
+            : "Keine Hub-Seite erreichbar.",
+        });
+      }
+      if (!found && hubEntries.length) {
+        const match = matchHubEntry(hubEntries, slug.term_translated, slug.slug_candidates);
+        if (match) {
+          evidence.push({
+            step: "hub",
+            detail: `Hub-Treffer „${match.entry.anchor_text ?? match.entry.url}" (Ähnlichkeit ${match.score.toFixed(2)}).`,
+          });
+          const v = await verifyUrl(match.entry.url);
+          checked.push({ url: match.entry.url, status: v.http_status });
+          if (v.ok) {
+            found = match.entry.url;
+            method = "hub";
+          }
+        } else if (hubUrl) {
+          evidence.push({
+            step: "hub",
+            detail: `Kein passender Eintrag in der Hub-Liste (${hubEntries.length} Links geprüft).`,
+          });
+        }
+      }
+
+      // Stufe 3 · Slug-Kandidaten über path_map, live geprüft
+      if (!found) {
+        const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates);
+        for (const url of urls) {
+          const v = await verifyUrl(url);
+          checked.push({ url, status: v.http_status });
+          evidence.push({ step: "slug", detail: `${url} → HTTP ${v.http_status}` });
+          if (v.ok) {
+            found = url;
+            method = "slug";
+            break;
+          }
         }
       }
 
@@ -175,9 +253,7 @@ export async function runStep(
         ? "EXISTS"
         : checked.some((c) => c.status === 404)
           ? "VERIFIED_404"
-          : (indexHits?.length ?? 0) === 0
-            ? "NOT_IN_INDEX"
-            : "VERIFIED_404";
+          : "NOT_IN_INDEX";
 
       const doc = found ? await extractPage(found) : null;
       const target = {
@@ -185,11 +261,12 @@ export async function runStep(
         url: found,
         checked,
         doc,
-        resolution_method: (viaHreflang ? "hreflang" : "slug") as "hreflang" | "slug",
+        resolution_method: method,
         hreflang_hint: hint,
+        evidence,
       };
       return {
-        output: { status, url: found, checked, resolution_method: target.resolution_method, hreflang_hint: hint },
+        output: { status, url: found, checked, resolution_method: method, hreflang_hint: hint, evidence },
         context: { target },
       };
     }
@@ -224,6 +301,58 @@ export async function runStep(
       };
     }
 
+    case "S7a_link_pool": {
+      const hm = hubMarket(market);
+      const pool = await buildLinkPool(hm, job.source_url);
+      if (!pool.entries.length) {
+        throw new Error(
+          `Kein Link-Pool aufbaubar: keine der ${pool.fetches.length} abgerufenen Seiten lieferte interne Links. ` +
+            `Bitte path_map, magazine_root und Domain des Markts prüfen.`,
+        );
+      }
+      // Persistenz mit TTL: alte Einträge dieses Markts/Typs verfallen nach 7 Tagen.
+      const cutoff = new Date(Date.now() - POOL_TTL_MS).toISOString();
+      await supabaseAdmin
+        .from("link_pool")
+        .delete()
+        .eq("market_id", market.id)
+        .lt("fetched_at", cutoff);
+      for (const chunk of chunked(pool.entries, 200)) {
+        await supabaseAdmin.from("link_pool").upsert(
+          chunk.map((e) => ({
+            market_id: market.id,
+            content_type: "magazine",
+            source_page: e.source_page,
+            url: e.url,
+            anchor_text: e.anchor_text,
+            path_type: e.path_type,
+            origin: e.origin,
+            http_status: 200,
+            fetched_at: new Date().toISOString(),
+          })) as never,
+          { onConflict: "market_id,content_type,url" },
+        );
+      }
+      return {
+        output: {
+          hub_url: pool.hub_url,
+          fetches: pool.fetches,
+          entries: pool.entries.length,
+          siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
+          by_origin: countBy(pool.entries.map((e) => e.origin)),
+        },
+        context: {
+          linkPool: {
+            hub_url: pool.hub_url,
+            built_at: new Date().toISOString(),
+            fetches: pool.fetches,
+            entries: pool.entries,
+            siblings: pool.siblings,
+          },
+        },
+      };
+    }
+
     case "S5_style_profile": {
       const { data: cached } = await supabaseAdmin
         .from("style_profiles")
@@ -237,22 +366,15 @@ export async function runStep(
           context: { styleProfile: cached.profile },
         };
       }
-      const { data: refs } = await supabaseAdmin
-        .from("url_index")
-        .select("h1,title,meta_description,intro_text")
-        .eq("market_id", market.id)
-        .eq("path_type", "magazine")
-        .limit(12);
-      const referenceTexts = ((refs ?? []) as Array<{
-        h1: string | null;
-        title: string | null;
-        meta_description: string | null;
-        intro_text: string | null;
-      }>)
-        .map((r) => [r.h1, r.meta_description, r.intro_text].filter(Boolean).join("\n"))
+      const siblings = ctx.linkPool?.siblings ?? [];
+      const referenceTexts = siblings
+        .map((s) => [s.title, s.text].filter(Boolean).join("\n"))
         .join("\n---\n");
       if (!referenceTexts.trim()) {
-        throw new Error("Keine Referenztexte im Index – bitte zuerst den URL-Index aufbauen.");
+        throw new Error(
+          "Keine Referenztexte vorhanden – bitte zuerst S7a (Link-Pool) ausführen; " +
+            "das Stilprofil entsteht aus den geladenen Geschwisterartikeln.",
+        );
       }
       const tpl = await loadTemplate("style_profile");
       const res = await runPrompt(tpl, { reference_texts: referenceTexts.slice(0, 12000) });
@@ -260,7 +382,7 @@ export async function runStep(
         .from("style_profiles")
         .insert({ market_id: market.id, content_type: "magazine", profile: res.data as never });
       return {
-        output: res.data,
+        output: { sources: siblings.map((s) => s.url), profile: res.data },
         context: { styleProfile: res.data },
         model: res.model,
         promptSnapshot: res.promptSnapshot,
@@ -306,27 +428,54 @@ export async function runStep(
       const plan = ctx.plan?.sections ?? [];
       const anchors = plan.flatMap((s) => s.anchors ?? []);
       if (!anchors.length) throw new Error("S6 hat keine Anker geliefert – S7 kann nichts suchen.");
-      const { data: rows } = await supabaseAdmin
-        .from("url_index")
-        .select("url,title,h1,breadcrumb,meta_description,intro_text,path_type")
-        .eq("market_id", market.id)
-        .limit(1000);
-      const entries = (rows ?? []) as IndexEntry[];
+      const hm = hubMarket(market);
+      const poolEntries: PoolEntry[] = [...(ctx.linkPool?.entries ?? [])];
+      if (!poolEntries.length) throw new Error("Kein Link-Pool vorhanden – bitte S7a ausführen.");
+
       const candidates: Record<string, { url: string; title: string; path_type: string }[]> = {};
+      const log: SearchLogEntry[] = [];
+      let searchBudget = SEARCH_BUDGET;
+
       for (const a of anchors) {
         const query = [a.anchor, ...(a.search_terms ?? []), a.intent ?? ""].filter(Boolean).join(" ");
-        const opts = a.path_type ? { pathType: a.path_type, limit: 8 } : { limit: 8 };
-        let hits = retrieve(query, entries, opts);
-        if (!hits.length && a.path_type) hits = retrieve(query, entries, { limit: 8 });
+        // Stufe 1 · Retrieval im Link-Pool
+        let hits = retrieveFromPool(query, poolEntries, { pathType: a.path_type, limit: 8 });
+        if (!hits.length && a.path_type) hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+
+        // Stufe 2 · gezielte Site-Suche, wenn der Pool zu schwach ist
+        let stage2 = false;
+        let stage2Source: "internal" | "web" | "none" | undefined;
+        if ((!hits.length || (hits[0]?.score ?? 0) < MIN_POOL_SCORE) && searchBudget > 0) {
+          stage2 = true;
+          searchBudget--;
+          const terms = (a.search_terms?.length ? a.search_terms : [a.anchor]).join(" ");
+          const found = await siteSearch(hm, terms);
+          stage2Source = found.source;
+          if (found.entries.length) {
+            found.entries.forEach((e) => {
+              if (!poolEntries.some((p) => p.url === e.url)) poolEntries.push(e);
+            });
+            hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+          }
+        }
+
         candidates[a.anchor] = hits.map((c) => ({
           url: c.url,
           title: c.title,
           path_type: c.path_type,
         }));
+        log.push({
+          anchor: a.anchor,
+          search_terms: a.search_terms ?? [],
+          stage2,
+          ...(stage2Source ? { stage2_source: stage2Source } : {}),
+          hits: hits.length,
+        });
       }
+
       return {
-        output: { anchors: anchors.length, candidates },
-        context: { linkCandidates: candidates },
+        output: { anchors: anchors.length, candidates, search_log: log },
+        context: { linkCandidates: candidates, linkSearchLog: log },
       };
     }
 
@@ -372,11 +521,26 @@ export async function runStep(
     case "S9_link_verify": {
       const selection = ctx.linkSelection ?? [];
       const verified: JobContext["verifiedLinks"] = [];
+      const broken: NonNullable<JobContext["brokenLinks"]> = [];
       await supabaseAdmin.from("verified_links").delete().eq("job_id", job.id);
       for (const s of selection) {
         if (!s.url) continue;
         const v = await verifyUrl(s.url);
-        if (!v.ok || v.http_status !== 200 || !v.canonical_ok) continue;
+        if (!v.ok || v.http_status !== 200 || !v.canonical_ok) {
+          broken.push({
+            anchor: s.anchor,
+            url: s.url,
+            http_status: v.http_status,
+            reason: v.http_status !== 200 ? `HTTP ${v.http_status}` : "Canonical/Soft-404",
+          });
+          // Toter Poolkandidat: aus dem Pool entfernen, damit er nicht erneut gewählt wird.
+          await supabaseAdmin
+            .from("link_pool")
+            .delete()
+            .eq("market_id", market.id)
+            .eq("url", s.url);
+          continue;
+        }
         const row = {
           anchor: s.anchor,
           target_url: s.url,
@@ -385,9 +549,12 @@ export async function runStep(
           ...(s.confidence ? { confidence: s.confidence } : {}),
         };
         verified.push(row);
-        await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "index", ...row });
+        await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "pool", ...row });
       }
-      return { output: verified, context: { verifiedLinks: verified } };
+      return {
+        output: { verified, broken },
+        context: { verifiedLinks: verified, brokenLinks: broken },
+      };
     }
 
     case "S10_localize_tables": {
@@ -524,6 +691,9 @@ export async function runStep(
 
     case "S13_export": {
       const source = requireSource(ctx);
+      const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
+      const gaps = buildGapReport(anchors, ctx.verifiedLinks ?? [], ctx.linkSearchLog ?? []);
+      const broken = ctx.brokenLinks ?? [];
       const md = [
         `# ${ctx.slug?.term_translated ?? source.h1 ?? ""}`,
         "",
@@ -531,6 +701,10 @@ export async function runStep(
         `> Zielstatus: ${ctx.target?.status ?? "-"}${ctx.target?.url ? ` (${ctx.target.url})` : ""}`,
         ctx.target?.resolution_method ? `> Zielermittlung: ${ctx.target.resolution_method}` : "",
         ctx.target?.hreflang_hint ? `> hreflang-Hinweis: ${ctx.target.hreflang_hint}` : "",
+        ctx.linkPool
+          ? `> Link-Pool: ${ctx.linkPool.entries.length} Links aus ${ctx.linkPool.fetches.length} Abrufen` +
+            (ctx.linkPool.hub_url ? ` (Hub: ${ctx.linkPool.hub_url})` : "")
+          : "",
         "",
         ...(ctx.content ?? []).map((c) => c.markdown),
         "",
@@ -538,11 +712,30 @@ export async function runStep(
         ...(ctx.verifiedLinks ?? []).map(
           (l) => `- [${l.anchor}](${l.target_url}) — HTTP ${l.http_status}`,
         ),
+        "",
+        "## Gap-Report",
+        gaps.length
+          ? gaps
+              .map(
+                (g) =>
+                  `- **${g.anchor}** — ${g.reason}. Suchbegriffe: ${g.search_terms.join(", ") || "–"}. ` +
+                  `Site-Suche: ${g.stage2_run ? "ausgeführt" : "nicht ausgeführt"}.`,
+              )
+              .join("\n")
+          : "- Keine offenen Anker: jeder geplante Anker hat einen verifizierten Link.",
+        broken.length
+          ? `\n### Verworfene Poolkandidaten\n${broken
+              .map((b) => `- ${b.anchor}: ${b.url} — ${b.reason}`)
+              .join("\n")}`
+          : "",
         market.closing_note ? `\n${market.closing_note}` : "",
       ]
         .filter((l) => l !== "")
         .join("\n");
-      return { output: { length: md.length }, context: { exportMarkdown: md } };
+      return {
+        output: { length: md.length, gaps: gaps.length, broken: broken.length },
+        context: { exportMarkdown: md, gapReport: gaps },
+      };
     }
 
     default:
@@ -570,8 +763,7 @@ export async function executeStep(jobId: string, stepKey: string) {
   const context = ((job as { context?: JobContext }).context ?? {}) as JobContext;
 
   // P2-1: Voraussetzungen prüfen, bevor irgendetwas läuft.
-  const indexCount = await marketIndexCount(market.id);
-  const blocker = dependencyBlocker(def.key, context, indexCount);
+  const blocker = dependencyBlocker(def.key, context);
   if (blocker) {
     await upsertStep(jobId, def.key, def.order, {
       status: "blocked",
@@ -721,8 +913,18 @@ function describeStepInput(
         target_url: ctx.target?.url,
         target_outline: clip(ctx.target?.doc?.outline ?? null),
       };
+    case "S7a_link_pool":
+      return {
+        market: marketInfo,
+        source_url: ctx.source?.url ?? null,
+        hub_candidates: ctx.linkPool?.hub_url ?? null,
+      };
     case "S5_style_profile":
-      return { market: marketInfo, content_type: "magazine" };
+      return {
+        market: marketInfo,
+        content_type: "magazine",
+        sibling_urls: (ctx.linkPool?.siblings ?? []).map((s) => s.url),
+      };
     case "S6_localization_plan":
       return {
         market: marketInfo,
@@ -734,6 +936,8 @@ function describeStepInput(
       return {
         market: marketInfo,
         anchors: (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []),
+        pool_size: ctx.linkPool?.entries.length ?? 0,
+        search_runs: ctx.linkSearchLog?.length ?? 0,
       };
     case "S8_link_select":
       return { candidates: ctx.linkCandidates };

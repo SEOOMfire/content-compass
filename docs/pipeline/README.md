@@ -35,7 +35,7 @@ Slug-Kandidaten (S2) ─► Zielstatus (S3) ─► Abgleich (S4, nur wenn Ziel e
    ▼
 Lokalisierungsplan (S6)
    │
-   ├─ Linkkandidaten aus URL-Index (S7)
+   ├─ Link-Pool (S7a) → Linkkandidaten (S7)
    ├─ Linkauswahl per Nummer (S8)
    └─ Linkverifikation per GET (S9)
    │

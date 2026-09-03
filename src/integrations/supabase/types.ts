@@ -120,6 +120,53 @@ export type Database = {
           },
         ]
       }
+      link_pool: {
+        Row: {
+          anchor_text: string | null
+          content_type: string
+          fetched_at: string
+          http_status: number | null
+          id: string
+          market_id: string
+          origin: string
+          path_type: string
+          source_page: string
+          url: string
+        }
+        Insert: {
+          anchor_text?: string | null
+          content_type?: string
+          fetched_at?: string
+          http_status?: number | null
+          id?: string
+          market_id: string
+          origin?: string
+          path_type?: string
+          source_page: string
+          url: string
+        }
+        Update: {
+          anchor_text?: string | null
+          content_type?: string
+          fetched_at?: string
+          http_status?: number | null
+          id?: string
+          market_id?: string
+          origin?: string
+          path_type?: string
+          source_page?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_pool_market_id_fkey"
+            columns: ["market_id"]
+            isOneToOne: false
+            referencedRelation: "markets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       markets: {
         Row: {
           active: boolean
@@ -141,6 +188,7 @@ export type Database = {
           magazine_root: string
           path_map: Json
           path_prefix: string
+          search_url_pattern: string | null
         }
         Insert: {
           active?: boolean
@@ -162,6 +210,7 @@ export type Database = {
           magazine_root?: string
           path_map?: Json
           path_prefix?: string
+          search_url_pattern?: string | null
         }
         Update: {
           active?: boolean
@@ -183,6 +232,7 @@ export type Database = {
           magazine_root?: string
           path_map?: Json
           path_prefix?: string
+          search_url_pattern?: string | null
         }
         Relationships: []
       }

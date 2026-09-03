@@ -41,7 +41,7 @@ function JobsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("markets")
-        .select("id,country,language,domain,active,index_last_run,url_index(count)")
+        .select("id,country,language,domain,active,index_last_run")
         .eq("active", true)
         .order("country");
       if (error) throw error;
@@ -54,12 +54,8 @@ function JobsPage() {
     country: string;
     language: string;
     index_last_run: string | null;
-    url_index: { count: number }[];
   };
   const marketList = (markets.data ?? []) as unknown as MarketOption[];
-  const selected = marketList.find((m) => m.id === marketId);
-  const indexCount = selected?.url_index?.[0]?.count ?? 0;
-  const indexMissing = Boolean(selected) && indexCount === 0;
 
   const jobs = useQuery({
     queryKey: ["jobs"],
@@ -80,12 +76,6 @@ function JobsPage() {
       toast.error("Bitte einen Zielmarkt wählen.");
       return;
     }
-    if (indexMissing) {
-      toast.error(
-        "Dieser Markt hat keinen URL-Index. Bitte zuerst im Admin unter „URL-Index“ einen Index aufbauen.",
-      );
-      return;
-    }
     setCreating(true);
     try {
       const res = await createJob({ data: { source_url: sourceUrl, market_id: marketId } });
@@ -104,7 +94,7 @@ function JobsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Content-Lokalisierung</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Deutsche Magazin-URL in einen Zielmarkt lokalisieren – in 13 nachvollziehbaren Schritten.
+          Deutsche Magazin-URL in einen Zielmarkt lokalisieren – in 14 nachvollziehbaren Schritten.
         </p>
       </div>
 
@@ -134,18 +124,13 @@ function JobsPage() {
                 <SelectContent>
                   {marketList.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
-                      {m.country} · {m.language} ({m.url_index?.[0]?.count ?? 0} URLs)
+                      {m.country} · {m.language}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {indexMissing && (
-                <p className="text-xs text-destructive">
-                  Kein URL-Index für diesen Markt – bitte zuerst im Admin „URL-Index“ aufbauen.
-                </p>
-              )}
             </div>
-            <Button type="submit" disabled={creating || indexMissing}>
+            <Button type="submit" disabled={creating}>
               {creating ? "…" : "Job anlegen"}
             </Button>
 
