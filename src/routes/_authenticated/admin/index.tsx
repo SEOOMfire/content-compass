@@ -35,13 +35,24 @@ function IndexAdmin() {
   const [running, setRunning] = useState(false);
 
   const markets = useQuery({
-    queryKey: ["markets-admin"],
+    queryKey: ["markets-index-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("markets").select("*").order("country");
+      const { data, error } = await supabase
+        .from("markets")
+        .select("id,country,language,domain,active,index_last_run,url_index(count)")
+        .order("country");
       if (error) throw error;
-      return data;
+      return data as unknown as {
+        id: string;
+        country: string;
+        language: string;
+        domain: string;
+        index_last_run: string | null;
+        url_index: { count: number }[];
+      }[];
     },
   });
+
 
   const rows = useQuery({
     queryKey: ["url-index", marketId],
