@@ -44,7 +44,12 @@ export const runStepFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { executeStep } = await import("@/lib/pipeline/engine.server");
-    return executeStep(data.jobId, data.stepKey);
+    const res = await executeStep(data.jobId, data.stepKey);
+    return {
+      ok: res.ok,
+      error: res.ok ? null : res.error,
+      output: res.ok ? JSON.stringify(res.output ?? null) : null,
+    };
   });
 
 export const runFromStepFn = createServerFn({ method: "POST" })
