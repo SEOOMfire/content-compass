@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 const TABS = [
   { to: "/admin/prompts", label: "Prompts" },
   { to: "/admin/markets", label: "Märkte" },
-  { to: "/admin/index", label: "URL-Index" },
+  { to: "/admin", label: "URL-Index" },
   { to: "/admin/users", label: "Nutzer" },
 ] as const;
 

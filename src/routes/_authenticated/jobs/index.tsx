@@ -64,7 +64,10 @@ function JobsPage() {
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!marketId) return toast.error("Bitte einen Zielmarkt wählen.");
+    if (!marketId) {
+      toast.error("Bitte einen Zielmarkt wählen.");
+      return;
+    }
     setCreating(true);
     try {
       const res = await createJob({ data: { source_url: sourceUrl, market_id: marketId } });

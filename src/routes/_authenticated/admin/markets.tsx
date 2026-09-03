@@ -57,9 +57,9 @@ function MarketsPage() {
         .from("markets")
         .update({
           domain: form["domain"] ?? "",
-          magazine_root: form["magazine_root"] || null,
-          category_root: form["category_root"] || null,
-          brand: form["brand"] || null,
+          magazine_root: form["magazine_root"] ? form["magazine_root"]! : null,
+          category_root: form["category_root"] ? form["category_root"]! : null,
+          brand: form["brand"] ? form["brand"]! : null,
           address_form: form["address_form"] || null,
           closing_note: form["closing_note"] || null,
           crawl_delay_ms: Number(form["crawl_delay_ms"] ?? 400),
