@@ -1,26 +1,27 @@
 import type { JobContext } from "./types";
 
-/** Abhängigkeitsprüfung (P2-1). Rückgabe = Klartextgrund, sonst null. */
-export function dependencyBlocker(
-  stepKey: string,
-  ctx: JobContext,
-  indexCount: number,
-): string | null {
+/**
+ * Abhängigkeitsprüfung (P2-1). Rückgabe = Klartextgrund, sonst null.
+ * Grundlage ist der Link-Pool (S7a), nicht mehr ein Gesamtindex des Markts.
+ */
+export function dependencyBlocker(stepKey: string, ctx: JobContext): string | null {
   const needSource = () => (ctx.source ? null : "S1 (Quelle extrahieren) muss zuerst laufen.");
-  const needIndex = () =>
-    indexCount > 0
+  const needPool = () =>
+    ctx.linkPool?.entries?.length
       ? null
-      : 'Der URL-Index dieses Markts ist leer. Bitte zuerst im Admin „Index aufbauen" ausführen.';
+      : "S7a (Link-Pool aufbauen) muss zuerst laufen – ohne Pool gibt es keine Zielkandidaten.";
   const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
 
   switch (stepKey) {
     case "S2_resolve_slug":
     case "S3_target_status":
-      return needSource();
     case "S4_compare":
+    case "S7a_link_pool":
       return needSource();
     case "S5_style_profile":
-      return needIndex();
+      return ctx.linkPool?.siblings?.length
+        ? null
+        : "S7a (Link-Pool) muss zuerst Geschwisterartikel geladen haben.";
     case "S6_localization_plan":
       return needSource();
     case "S7_link_candidates":
@@ -28,7 +29,7 @@ export function dependencyBlocker(
         ? "S6 (Lokalisierungsplan) muss zuerst laufen."
         : !anchors.length
           ? "S6 hat keine Anker geliefert – bitte S6 erneut ausführen."
-          : needIndex();
+          : needPool();
     case "S8_link_select":
       return Object.values(ctx.linkCandidates ?? {}).some((l) => l.length)
         ? null
