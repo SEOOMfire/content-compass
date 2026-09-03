@@ -243,7 +243,12 @@ export async function runStep(
         .eq("market_id", market.id)
         .eq("path_type", "magazine")
         .limit(12);
-      const referenceTexts = (refs ?? [])
+      const referenceTexts = ((refs ?? []) as Array<{
+        h1: string | null;
+        title: string | null;
+        meta_description: string | null;
+        intro_text: string | null;
+      }>)
         .map((r) => [r.h1, r.meta_description, r.intro_text].filter(Boolean).join("\n"))
         .join("\n---\n");
       if (!referenceTexts.trim()) {
@@ -626,7 +631,7 @@ async function syncJobStatus(jobId: string) {
     .from("job_steps")
     .select("step_key,status")
     .eq("job_id", jobId);
-  const rows = steps ?? [];
+  const rows = (steps ?? []) as Array<{ step_key: string; status: string }>;
   const problems = rows.filter((s) => s.status === "error" || s.status === "blocked").length;
   const finished = rows.find((s) => s.step_key === "S13_export")?.status === "done";
   const status = finished ? (problems ? "done_with_errors" : "done") : problems ? "error" : "idle";
