@@ -37,17 +37,29 @@ function JobsPage() {
   const [creating, setCreating] = useState(false);
 
   const markets = useQuery({
-    queryKey: ["markets"],
+    queryKey: ["markets-with-index"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("markets")
-        .select("id,country,language,domain,active")
+        .select("id,country,language,domain,active,index_last_run,url_index(count)")
         .eq("active", true)
         .order("country");
       if (error) throw error;
       return data;
     },
   });
+
+  type MarketOption = {
+    id: string;
+    country: string;
+    language: string;
+    index_last_run: string | null;
+    url_index: { count: number }[];
+  };
+  const marketList = (markets.data ?? []) as unknown as MarketOption[];
+  const selected = marketList.find((m) => m.id === marketId);
+  const indexCount = selected?.url_index?.[0]?.count ?? 0;
+  const indexMissing = Boolean(selected) && indexCount === 0;
 
   const jobs = useQuery({
     queryKey: ["jobs"],
@@ -68,6 +80,12 @@ function JobsPage() {
       toast.error("Bitte einen Zielmarkt wählen.");
       return;
     }
+    if (indexMissing) {
+      toast.error(
+        "Dieser Markt hat keinen URL-Index. Bitte zuerst im Admin unter „URL-Index“ einen Index aufbauen.",
+      );
+      return;
+    }
     setCreating(true);
     try {
       const res = await createJob({ data: { source_url: sourceUrl, market_id: marketId } });
@@ -79,6 +97,7 @@ function JobsPage() {
       setCreating(false);
     }
   }
+
 
   return (
     <div className="space-y-8">
