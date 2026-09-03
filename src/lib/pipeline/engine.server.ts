@@ -631,7 +631,7 @@ async function syncJobStatus(jobId: string) {
     .from("job_steps")
     .select("step_key,status")
     .eq("job_id", jobId);
-  const rows = steps ?? [];
+  const rows = (steps ?? []) as Array<{ step_key: string; status: string }>;
   const problems = rows.filter((s) => s.status === "error" || s.status === "blocked").length;
   const finished = rows.find((s) => s.step_key === "S13_export")?.status === "done";
   const status = finished ? (problems ? "done_with_errors" : "done") : problems ? "error" : "idle";
