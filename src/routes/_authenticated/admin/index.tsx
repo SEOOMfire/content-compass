@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { rebuildIndex } from "@/lib/pipeline.functions";
+import { previewLinkPool } from "@/lib/pipeline.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,53 +19,67 @@ import {
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
     meta: [
-      { title: "URL-Index – Content-Lokalisierung" },
-      { name: "description", content: "URL-Index je Zielmarkt aufbauen und prüfen." },
-      { property: "og:title", content: "URL-Index" },
-      { property: "og:description", content: "URL-Index je Zielmarkt aufbauen und prüfen." },
+      { title: "Link-Pool – Content-Lokalisierung" },
+      {
+        name: "description",
+        content: "Link-Pool je Zielmarkt per Hub-Harvesting aufbauen und prüfen.",
+      },
+      { property: "og:title", content: "Link-Pool" },
+      {
+        property: "og:description",
+        content: "Link-Pool je Zielmarkt per Hub-Harvesting aufbauen und prüfen.",
+      },
     ],
   }),
-  component: IndexAdmin,
+  component: LinkPoolAdmin;
 });
 
-function IndexAdmin() {
+function LinkPoolAdmin() {
   const qc = useQueryClient();
   const [marketId, setMarketId] = useState("");
-  const [limit, setLimit] = useState(80);
+  const [sourceUrl, setSourceUrl] = useState(
+    "https://www.fressnapf.de/magazin/hund/rassen/barbet/",
+  );
   const [running, setRunning] = useState(false);
 
+  type MarketRow = {
+    id: string;
+    country: string;
+    language: string;
+    domain: string;
+    index_last_run: string | null;
+  };
+
   const markets = useQuery({
-    queryKey: ["markets-index-stats"],
+    queryKey: ["markets-pool-stats"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("markets")
-        .select("id,country,language,domain,active,index_last_run,url_index(count)")
+        .select("id,country,language,domain,active,index_last_run")
         .order("country");
       if (error) throw error;
-      return data as unknown as {
-        id: string;
-        country: string;
-        language: string;
-        domain: string;
-        index_last_run: string | null;
-        url_index: { count: number }[];
-      }[];
+      return data as unknown as MarketRow[];
     },
   });
 
-
   const rows = useQuery({
-    queryKey: ["url-index", marketId],
+    queryKey: ["link-pool", marketId],
     enabled: !!marketId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("url_index")
-        .select("url,path_type,h1,last_seen")
+        .from("link_pool")
+        .select("url,anchor_text,path_type,origin,fetched_at")
         .eq("market_id", marketId)
-        .order("last_seen", { ascending: false })
-        .limit(200);
+        .order("fetched_at", { ascending: false })
+        .limit(300);
       if (error) throw error;
-      return data;
+      return data as unknown as {
+        url: string;
+        anchor_text: string | null;
+        path_type: string;
+        origin: string;
+        fetched_at: string;
+      }[];
     },
   });
 
@@ -73,12 +87,14 @@ function IndexAdmin() {
     if (!marketId) return;
     setRunning(true);
     try {
-      const res = await rebuildIndex({ data: { marketId, limit } });
-      toast.success(`${res.indexed} von ${res.discovered} URLs indexiert`);
-      await qc.invalidateQueries({ queryKey: ["url-index", marketId] });
-      await qc.invalidateQueries({ queryKey: ["markets-index-stats"] });
+      const res = await previewLinkPool({ data: { marketId, sourceUrl } });
+      toast.success(
+        `${res.entries} Links aus ${res.fetches.length} Abrufen${res.hub_url ? ` · Hub: ${res.hub_url}` : ""}`,
+      );
+      await qc.invalidateQueries({ queryKey: ["link-pool", marketId] });
+      await qc.invalidateQueries({ queryKey: ["markets-pool-stats"] });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Index-Lauf fehlgeschlagen");
+      toast.error(err instanceof Error ? err.message : "Link-Pool-Lauf fehlgeschlagen");
     } finally {
       setRunning(false);
     }
@@ -88,86 +104,83 @@ function IndexAdmin() {
     <div className="space-y-4">
       <Card className="border-border bg-surface">
         <CardHeader>
-          <CardTitle className="text-base">Index-Lauf</CardTitle>
+          <CardTitle className="text-base">Link-Pool (Hub-Harvesting)</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-[260px_140px_auto] md:items-end">
-          <div className="space-y-1.5">
-            <Label>Markt</Label>
-            <Select value={marketId} onValueChange={setMarketId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Markt wählen" />
-              </SelectTrigger>
-              <SelectContent>
-                {(markets.data ?? []).map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.country} · {m.language} ({m.url_index?.[0]?.count ?? 0} URLs)
-                  </SelectItem>
-                ))}
-
-              </SelectContent>
-            </Select>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Es wird kein Gesamtindex mehr aufgebaut. Pro Lauf werden maximal acht Seiten des
+            Zielmarkts geladen: die zur Quell-URL passende Hub-Seite, die Navigation und bis zu drei
+            Geschwisterartikel. Daraus entsteht der Link-Pool für Zielprüfung und Verlinkung.
+          </p>
+          <div className="grid gap-3 md:grid-cols-[240px_1fr_auto] md:items-end">
+            <div className="space-y-1.5">
+              <Label>Markt</Label>
+              <Select value={marketId} onValueChange={setMarketId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Markt wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(markets.data ?? []).map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.country} · {m.language}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Beispiel-Quell-URL (bestimmt die Hub-Seite)</Label>
+              <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
+            </div>
+            <Button onClick={run} disabled={running || !marketId}>
+              {running ? "läuft…" : "Link-Pool aufbauen"}
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <Label>Max. URLs</Label>
-            <Input
-              type="number"
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-            />
-          </div>
-          <Button onClick={run} disabled={running || !marketId}>
-            {running ? "läuft…" : "Index aufbauen"}
-          </Button>
         </CardContent>
       </Card>
 
       <Card className="border-border bg-surface">
         <CardHeader>
-          <CardTitle className="text-base">Index-Status je Markt</CardTitle>
+          <CardTitle className="text-base">Letzter Lauf je Markt</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          {(markets.data ?? []).map((m) => {
-            const count = m.url_index?.[0]?.count ?? 0;
-            return (
-              <div
-                key={m.id}
-                className="flex items-center justify-between gap-3 border-b border-border py-1"
-              >
-                <span className="truncate">
-                  {m.country} · {m.language}{" "}
-                  <span className="text-xs text-muted-foreground">{m.domain}</span>
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {count === 0 ? (
-                    <span className="text-destructive">kein Index</span>
-                  ) : (
-                    `${count} URLs`
-                  )}
-                  {" · "}
-                  {m.index_last_run
-                    ? new Date(m.index_last_run).toLocaleString("de-DE")
-                    : "nie gelaufen"}
-                </span>
-              </div>
-            );
-          })}
+          {(markets.data ?? []).map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center justify-between gap-3 border-b border-border py-1"
+            >
+              <span className="truncate">
+                {m.country} · {m.language}{" "}
+                <span className="text-xs text-muted-foreground">{m.domain}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {m.index_last_run
+                  ? new Date(m.index_last_run).toLocaleString("de-DE")
+                  : "noch kein Pool-Lauf"}
+              </span>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
-
       <Card className="border-border bg-surface">
         <CardHeader>
-          <CardTitle className="text-base">Indexierte URLs</CardTitle>
+          <CardTitle className="text-base">Links im Pool</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          {(rows.data ?? []).map((r: { url: string; h1: string | null; path_type: string; last_seen: string }) => (
-            <div key={r.url} className="flex items-center justify-between gap-3 border-b border-border py-1">
-              <span className="truncate">{r.h1 ?? r.url}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{r.path_type}</span>
+          {(rows.data ?? []).map((r) => (
+            <div
+              key={r.url}
+              className="flex items-center justify-between gap-3 border-b border-border py-1"
+            >
+              <span className="truncate">{r.anchor_text || r.url}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {r.origin} · {r.path_type}
+              </span>
             </div>
           ))}
           {!rows.data?.length && (
-            <p className="text-sm text-muted-foreground">Noch keine Einträge für diesen Markt.</p>
+            <p className="text-sm text-muted-foreground">Noch kein Pool für diesen Markt.</p>
           )}
         </CardContent>
       </Card>
