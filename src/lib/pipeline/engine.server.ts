@@ -288,6 +288,58 @@ export async function runStep(
       };
     }
 
+    case "S7a_link_pool": {
+      const hm = hubMarket(market);
+      const pool = await buildLinkPool(hm, job.source_url);
+      if (!pool.entries.length) {
+        throw new Error(
+          `Kein Link-Pool aufbaubar: keine der ${pool.fetches.length} abgerufenen Seiten lieferte interne Links. ` +
+            `Bitte path_map, magazine_root und Domain des Markts prüfen.`,
+        );
+      }
+      // Persistenz mit TTL: alte Einträge dieses Markts/Typs verfallen nach 7 Tagen.
+      const cutoff = new Date(Date.now() - POOL_TTL_MS).toISOString();
+      await supabaseAdmin
+        .from("link_pool")
+        .delete()
+        .eq("market_id", market.id)
+        .lt("fetched_at", cutoff);
+      for (const chunk of chunked(pool.entries, 200)) {
+        await supabaseAdmin.from("link_pool").upsert(
+          chunk.map((e) => ({
+            market_id: market.id,
+            content_type: "magazine",
+            source_page: e.source_page,
+            url: e.url,
+            anchor_text: e.anchor_text,
+            path_type: e.path_type,
+            origin: e.origin,
+            http_status: 200,
+            fetched_at: new Date().toISOString(),
+          })) as never,
+          { onConflict: "market_id,content_type,url" },
+        );
+      }
+      return {
+        output: {
+          hub_url: pool.hub_url,
+          fetches: pool.fetches,
+          entries: pool.entries.length,
+          siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
+          by_origin: countBy(pool.entries.map((e) => e.origin)),
+        },
+        context: {
+          linkPool: {
+            hub_url: pool.hub_url,
+            built_at: new Date().toISOString(),
+            fetches: pool.fetches,
+            entries: pool.entries,
+            siblings: pool.siblings,
+          },
+        },
+      };
+    }
+
     case "S5_style_profile": {
       const { data: cached } = await supabaseAdmin
         .from("style_profiles")
@@ -301,22 +353,15 @@ export async function runStep(
           context: { styleProfile: cached.profile },
         };
       }
-      const { data: refs } = await supabaseAdmin
-        .from("url_index")
-        .select("h1,title,meta_description,intro_text")
-        .eq("market_id", market.id)
-        .eq("path_type", "magazine")
-        .limit(12);
-      const referenceTexts = ((refs ?? []) as Array<{
-        h1: string | null;
-        title: string | null;
-        meta_description: string | null;
-        intro_text: string | null;
-      }>)
-        .map((r) => [r.h1, r.meta_description, r.intro_text].filter(Boolean).join("\n"))
+      const siblings = ctx.linkPool?.siblings ?? [];
+      const referenceTexts = siblings
+        .map((s) => [s.title, s.text].filter(Boolean).join("\n"))
         .join("\n---\n");
       if (!referenceTexts.trim()) {
-        throw new Error("Keine Referenztexte im Index – bitte zuerst den URL-Index aufbauen.");
+        throw new Error(
+          "Keine Referenztexte vorhanden – bitte zuerst S7a (Link-Pool) ausführen; " +
+            "das Stilprofil entsteht aus den geladenen Geschwisterartikeln.",
+        );
       }
       const tpl = await loadTemplate("style_profile");
       const res = await runPrompt(tpl, { reference_texts: referenceTexts.slice(0, 12000) });
@@ -324,7 +369,7 @@ export async function runStep(
         .from("style_profiles")
         .insert({ market_id: market.id, content_type: "magazine", profile: res.data as never });
       return {
-        output: res.data,
+        output: { sources: siblings.map((s) => s.url), profile: res.data },
         context: { styleProfile: res.data },
         model: res.model,
         promptSnapshot: res.promptSnapshot,
