@@ -122,6 +122,40 @@ function IndexAdmin() {
 
       <Card className="border-border bg-surface">
         <CardHeader>
+          <CardTitle className="text-base">Index-Status je Markt</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          {(markets.data ?? []).map((m) => {
+            const count = m.url_index?.[0]?.count ?? 0;
+            return (
+              <div
+                key={m.id}
+                className="flex items-center justify-between gap-3 border-b border-border py-1"
+              >
+                <span className="truncate">
+                  {m.country} · {m.language}{" "}
+                  <span className="text-xs text-muted-foreground">{m.domain}</span>
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {count === 0 ? (
+                    <span className="text-destructive">kein Index</span>
+                  ) : (
+                    `${count} URLs`
+                  )}
+                  {" · "}
+                  {m.index_last_run
+                    ? new Date(m.index_last_run).toLocaleString("de-DE")
+                    : "nie gelaufen"}
+                </span>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+
+      <Card className="border-border bg-surface">
+        <CardHeader>
           <CardTitle className="text-base">Indexierte URLs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
