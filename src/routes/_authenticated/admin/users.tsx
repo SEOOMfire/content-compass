@@ -7,6 +7,7 @@ import { ROLE_LABELS, type AppRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
@@ -32,9 +33,9 @@ function UsersPage() {
         supabase.from("profiles").select("id,email").order("email"),
         supabase.from("user_roles").select("user_id,role"),
       ]);
-      return (profiles ?? []).map((p) => ({
+      return (profiles ?? []).map((p: Tables<"profiles">) => ({
         ...p,
-        roles: (roles ?? []).filter((r) => r.user_id === p.id).map((r) => r.role as AppRole),
+        roles: (roles ?? []).filter((r: Tables<"user_roles">) => r.user_id === p.id).map((r: Tables<"user_roles">) => r.role as AppRole),
       }));
     },
   });

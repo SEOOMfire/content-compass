@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+import type { Tables } from "@/integrations/supabase/types";
   Select,
   SelectContent,
   SelectItem,
@@ -86,7 +87,7 @@ function IndexAdmin() {
                 <SelectValue placeholder="Markt wählen" />
               </SelectTrigger>
               <SelectContent>
-                {(markets.data ?? []).map((m) => (
+                {(markets.data ?? []).map((m: Tables<"markets">) => (
                   <SelectItem key={m.id} value={m.id}>
                     {m.country} · {m.language}
                   </SelectItem>
@@ -113,7 +114,7 @@ function IndexAdmin() {
           <CardTitle className="text-base">Indexierte URLs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          {(rows.data ?? []).map((r) => (
+          {(rows.data ?? []).map((r: Tables<"url_index">) => (
             <div key={r.url} className="flex items-center justify-between gap-3 border-b border-border py-1">
               <span className="truncate">{r.h1 ?? r.url}</span>
               <span className="shrink-0 text-xs text-muted-foreground">{r.path_type}</span>

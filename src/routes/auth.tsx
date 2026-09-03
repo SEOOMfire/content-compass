@@ -29,7 +29,7 @@ function AuthPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => {
       if (data.session) navigate({ to: "/jobs", replace: true });
     });
   }, [navigate]);

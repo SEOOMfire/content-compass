@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/admin/prompts")({
   head: () => ({
@@ -51,10 +52,10 @@ function PromptsPage() {
     },
   });
 
-  const current = (prompts.data ?? []).find((p) => p.id === active);
+  const current = (prompts.data ?? []).find((p: Tables<"prompt_templates">) => p.id === active);
 
   function select(id: string) {
-    const p = (prompts.data ?? []).find((x) => x.id === id);
+    const p = (prompts.data ?? []).find((x: Tables<"prompt_templates">) => x.id === id);
     if (!p) return;
     setActive(id);
     setTestResult(null);
@@ -103,7 +104,7 @@ function PromptsPage() {
           <CardTitle className="text-base">Vorlagen</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          {(prompts.data ?? []).map((p) => (
+          {(prompts.data ?? []).map((p: Tables<"prompt_templates">) => (
             <button
               key={p.id}
               type="button"
