@@ -13,6 +13,10 @@ import {
   matchHreflang,
   PathMapError,
 } from "../src/lib/pipeline/paths";
+import {
+  derivePathPairs,
+  extractContentLinks,
+} from "../src/lib/pipeline/hreflang.server";
 import { checkLocalizedTable, tableRows } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
 import {
