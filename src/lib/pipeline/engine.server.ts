@@ -31,7 +31,14 @@ import {
   S10OutputSchema,
   validateStepData,
 } from "./schemas";
-import { buildTargetUrls, hreflangHint, lastPathSegment, matchHreflang } from "./paths";
+import {
+  buildTargetUrls,
+  hreflangHint,
+  lastPathSegment,
+  matchHreflang,
+  PathMapError,
+} from "./paths";
+import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkLocalizedTable } from "./tables";
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
@@ -126,6 +133,7 @@ export async function runStep(
           ...doc,
           sections: doc.sections.length,
           hreflang_count: doc.hreflang.length,
+          content_links: doc.contentLinks?.length ?? 0,
         },
         context: { source: doc },
       };
@@ -203,7 +211,11 @@ export async function runStep(
       let hubEntries: PoolEntry[] = ctx.linkPool?.entries ?? [];
       let hubUrl = ctx.linkPool?.hub_url ?? null;
       if (!found && !hubEntries.length) {
-        const hub = await fetchHubEntries(hubMarket(market), job.source_url);
+        const hub = await fetchHubEntries(
+          hubMarket(market),
+          job.source_url,
+          ctx.derivedPathMap ?? {},
+        );
         hubEntries = hub.entries;
         hubUrl = hub.hub_url;
         evidence.push({
@@ -234,18 +246,70 @@ export async function runStep(
         }
       }
 
-      // Stufe 3 · Slug-Kandidaten über path_map, live geprüft
+      // Stufe 2b · hreflang-Ernte über die Content-Links der Quellseite.
+      // Liefert belegte Ziel-URLs und eine abgeleitete Pfadübersetzung, wenn
+      // market.path_map Lücken hat (z. B. „gesundheit" → „health").
+      let harvest = ctx.hreflangHarvest ?? null;
+      let derivedMap = { ...(ctx.derivedPathMap ?? {}) };
       if (!found) {
-        const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates);
-        for (const url of urls) {
-          const v = await verifyUrl(url);
-          checked.push({ url, status: v.http_status });
-          evidence.push({ step: "slug", detail: `${url} → HTTP ${v.http_status}` });
+        if (!harvest) {
+          const res = await harvestHreflangEquivalents(source.contentLinks ?? [], hubMarket(market));
+          harvest = {
+            checked: res.checked,
+            entries: res.entries,
+            derived_path_map: res.derivedPathMap,
+            harvested_at: new Date().toISOString(),
+          };
+        }
+        derivedMap = { ...harvest.derived_path_map, ...derivedMap };
+        evidence.push({
+          step: "hreflang_pool",
+          detail:
+            `${harvest.checked.length} im Content verlinkte Quellartikel geprüft, ` +
+            `${harvest.entries.length} hreflang-Äquivalente im Zielmarkt gefunden` +
+            (Object.keys(harvest.derived_path_map).length
+              ? `; abgeleitete Pfade: ${Object.entries(harvest.derived_path_map)
+                  .map(([k, v]) => `${k}→${v}`)
+                  .join(", ")}`
+              : "; keine Pfadübersetzung ableitbar"),
+        });
+        const poolMatch = matchHubEntry(
+          harvest.entries.map((e) => ({ ...e, origin: "hub" as const })),
+          slug.term_translated,
+          slug.slug_candidates,
+        );
+        if (poolMatch) {
+          const v = await verifyUrl(poolMatch.entry.url);
+          checked.push({ url: poolMatch.entry.url, status: v.http_status });
+          evidence.push({
+            step: "hreflang_pool",
+            detail: `Kandidat aus hreflang-Ernte: ${poolMatch.entry.url} → HTTP ${v.http_status}`,
+          });
           if (v.ok) {
-            found = url;
-            method = "slug";
-            break;
+            found = poolMatch.entry.url;
+            method = "hub";
           }
+        }
+      }
+
+      // Stufe 3 · Slug-Kandidaten über path_map (+ abgeleitete Pfade), live geprüft
+      if (!found) {
+        try {
+          const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates, derivedMap);
+          for (const url of urls) {
+            const v = await verifyUrl(url);
+            checked.push({ url, status: v.http_status });
+            evidence.push({ step: "slug", detail: `${url} → HTTP ${v.http_status}` });
+            if (v.ok) {
+              found = url;
+              method = "slug";
+              break;
+            }
+          }
+        } catch (e) {
+          if (!(e instanceof PathMapError)) throw e;
+          evidence.push({ step: "slug", detail: e.message });
+          if (!checked.length) throw e;
         }
       }
 
@@ -266,10 +330,23 @@ export async function runStep(
         evidence,
       };
       return {
-        output: { status, url: found, checked, resolution_method: method, hreflang_hint: hint, evidence },
-        context: { target },
+        output: {
+          status,
+          url: found,
+          checked,
+          resolution_method: method,
+          hreflang_hint: hint,
+          evidence,
+          derived_path_map: derivedMap,
+          hreflang_pool: harvest?.entries.length ?? 0,
+        },
+        context: {
+          target,
+          ...(harvest ? { hreflangHarvest: harvest, derivedPathMap: derivedMap } : {}),
+        },
       };
     }
+
 
     case "S4_compare": {
       const source = requireSource(ctx);
@@ -302,8 +379,28 @@ export async function runStep(
     }
 
     case "S7a_link_pool": {
+      const source = requireSource(ctx);
       const hm = hubMarket(market);
-      const pool = await buildLinkPool(hm, job.source_url);
+      // Stufe 0 · hreflang-Äquivalente der im Content verlinkten Quellartikel.
+      let harvest = ctx.hreflangHarvest ?? null;
+      if (!harvest) {
+        const res = await harvestHreflangEquivalents(source.contentLinks ?? [], hm);
+        harvest = {
+          checked: res.checked,
+          entries: res.entries,
+          derived_path_map: res.derivedPathMap,
+          harvested_at: new Date().toISOString(),
+        };
+      }
+      const derivedMap = { ...harvest.derived_path_map, ...(ctx.derivedPathMap ?? {}) };
+      const pool = await buildLinkPool(hm, job.source_url, derivedMap);
+      const known = new Set(pool.entries.map((e) => e.url));
+      for (const e of harvest.entries) {
+        if (!known.has(e.url)) {
+          known.add(e.url);
+          pool.entries.unshift(e);
+        }
+      }
       if (!pool.entries.length) {
         throw new Error(
           `Kein Link-Pool aufbaubar: keine der ${pool.fetches.length} abgerufenen Seiten lieferte interne Links. ` +
@@ -337,11 +434,16 @@ export async function runStep(
         output: {
           hub_url: pool.hub_url,
           fetches: pool.fetches,
+          hreflang_pool: harvest.entries.length,
+          hreflang_checked: harvest.checked.length,
+          derived_path_map: derivedMap,
           entries: pool.entries.length,
           siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
           by_origin: countBy(pool.entries.map((e) => e.origin)),
         },
         context: {
+          hreflangHarvest: harvest,
+          derivedPathMap: derivedMap,
           linkPool: {
             hub_url: pool.hub_url,
             built_at: new Date().toISOString(),

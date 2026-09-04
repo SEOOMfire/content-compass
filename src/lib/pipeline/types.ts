@@ -153,6 +153,8 @@ export interface SourceDoc {
   tables: SourceTable[];
   wordCount: number;
   outline: string;
+  /** Interne Links im Fließtext der Quellseite (Basis der hreflang-Ernte). */
+  contentLinks?: { url: string; anchor: string }[];
 }
 
 export type PlanAction = "uebersetzen" | "lokalisieren" | "umschreiben" | "streichen";
@@ -194,6 +196,15 @@ export interface JobContext {
     hreflang_hint?: string | null;
     /** Nachweiskette der Zielermittlung (hreflang, Hub-Treffer, HTTP-Prüfungen). */
     evidence?: { step: string; detail: string }[];
+  };
+  /** Aus hreflang-Paaren abgeleitete Pfadübersetzung (ergänzt market.path_map). */
+  derivedPathMap?: Record<string, string>;
+  /** Ergebnis der hreflang-Ernte über die Content-Links der Quellseite. */
+  hreflangHarvest?: {
+    checked: { de_url: string; status: number; target_url: string | null }[];
+    entries: PoolEntry[];
+    derived_path_map: Record<string, string>;
+    harvested_at: string;
   };
   /** S7a · Link-Pool statt Gesamtindex. */
   linkPool?: {
