@@ -37,6 +37,40 @@ function tableToMarkdown(table: HTMLElement): string {
   return lines.join("\n");
 }
 
+function sameHost(a: string, b: string): boolean {
+  try {
+    return new URL(a).hostname.replace(/^www\./, "") === new URL(b).hostname.replace(/^www\./, "");
+  } catch {
+    return false;
+  }
+}
+
+/** Interne Links im Fließtext (nav/header/footer sind vorher entfernt). */
+function collectContentLinks(main: HTMLElement, pageUrl: string): { url: string; anchor: string }[] {
+  const seen = new Set<string>();
+  const out: { url: string; anchor: string }[] = [];
+  for (const a of main.querySelectorAll("a[href]")) {
+    const href = a.getAttribute("href") ?? "";
+    if (!href || href.startsWith("#") || /^(mailto|tel|javascript):/i.test(href)) continue;
+    let abs: URL;
+    try {
+      abs = new URL(href, pageUrl);
+    } catch {
+      continue;
+    }
+    if (!/^https?:$/.test(abs.protocol)) continue;
+    if (!sameHost(abs.toString(), pageUrl)) continue;
+    if (/\.(jpg|jpeg|png|gif|svg|webp|pdf|zip|mp4)$/i.test(abs.pathname)) continue;
+    abs.hash = "";
+    const u = abs.toString();
+    if (u.replace(/\/$/, "") === pageUrl.replace(/\/$/, "")) continue;
+    if (seen.has(u)) continue;
+    seen.add(u);
+    out.push({ url: u, anchor: textOf(a) });
+  }
+  return out;
+}
+
 export function extractDoc(url: string, finalUrl: string, status: number, html: string): SourceDoc {
   const root = parse(html);
   const canonical = root.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? null;
@@ -75,6 +109,8 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
   });
   if (current.text.trim()) sections.push(current);
 
+  const contentLinks = collectContentLinks(main, finalUrl || url);
+
   const tables: SourceTable[] = main.querySelectorAll("table").map((t, i) => ({
     index: i,
     markdown: tableToMarkdown(t),
@@ -96,6 +132,7 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
     tables,
     wordCount,
     outline,
+    contentLinks,
   };
 }
 

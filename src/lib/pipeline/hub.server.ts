@@ -149,6 +149,7 @@ function plainText(html: string): string {
 export async function buildLinkPool(
   rawMarket: HubMarket,
   sourceUrl: string,
+  extraMap: Record<string, string> = {},
 ): Promise<LinkPoolResult> {
   const market = normalizeMarket(rawMarket);
   const delay = market.crawl_delay_ms ?? 400;
@@ -182,7 +183,7 @@ export async function buildLinkPool(
   // 1 · Hub-Seiten (Elternpfad über path_map übersetzt)
   let hubCandidates: string[] = [];
   try {
-    hubCandidates = buildHubUrls(sourceUrl, market);
+    hubCandidates = buildHubUrls(sourceUrl, market, extraMap);
   } catch (e) {
     if (!(e instanceof PathMapError)) throw e;
     hubCandidates = [market.magazine_root, market.category_root].filter(Boolean) as string[];
@@ -278,11 +279,12 @@ export { USER_AGENT };
 export async function fetchHubEntries(
   rawMarket: HubMarket,
   sourceUrl: string,
+  extraMap: Record<string, string> = {},
 ): Promise<{ hub_url: string | null; entries: PoolEntry[]; status: number }> {
   const market = normalizeMarket(rawMarket);
   let candidates: string[] = [];
   try {
-    candidates = buildHubUrls(sourceUrl, market);
+    candidates = buildHubUrls(sourceUrl, market, extraMap);
   } catch (e) {
     if (!(e instanceof PathMapError)) throw e;
     candidates = [market.magazine_root, market.category_root].filter(Boolean) as string[];
