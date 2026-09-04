@@ -262,3 +262,45 @@ describe("14 · Abhängigkeiten (Link-Pool statt Gesamtindex)", () => {
     expect(dependencyBlocker("S13_export", { content: [{ heading: "x", markdown: "y" }] })).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 15 · hreflang-Ernte über die Content-Links der Quellseite
+// ---------------------------------------------------------------------------
+describe("15 · hreflang-Ernte", () => {
+  test("Segmentpaare werden aus äquivalenten URLs abgeleitet (ohne Slug)", () => {
+    const pairs = derivePathPairs(
+      "https://www.fressnapf.de/magazin/hund/gesundheit/zahnstein/",
+      "https://www.maxizoo.ie/magazine/dog/health/tartar/",
+    );
+    expect(pairs).toEqual({ magazin: "magazine", hund: "dog", gesundheit: "health" });
+  });
+
+  test("unterschiedliche Pfadtiefe liefert keine Paare", () => {
+    expect(
+      derivePathPairs("https://a.de/magazin/hund/x/", "https://b.ie/magazine/dog/health/x/"),
+    ).toEqual({});
+  });
+
+  test("abgeleitete Pfade füllen Lücken, market.path_map bleibt maßgeblich", () => {
+    const market = { domain: "maxizoo.ie", path_map: { magazin: "magazine", hund: "dog" } };
+    const url = buildTargetUrl(
+      "https://www.fressnapf.de/magazin/hund/gesundheit/analdruesenentzuendung/",
+      market,
+      "anal-gland-infection",
+      { gesundheit: "health", hund: "hound" },
+    );
+    expect(url).toBe("https://maxizoo.ie/magazine/dog/health/anal-gland-infection/");
+  });
+
+  test("nur interne Fließtext-Links werden geerntet", () => {
+    const html = `<main><nav><a href="/nav/">Nav</a></nav>
+      <p><a href="/magazin/hund/gesundheit/zahnstein/">Zahnstein</a>
+      <a href="https://extern.de/x">Extern</a>
+      <a href="#top">Anker</a>
+      <a href="/bild.jpg">Bild</a></p></main>`;
+    const links = extractContentLinks(html, "https://www.fressnapf.de/magazin/hund/rassen/barbet/");
+    expect(links.map((l) => l.url)).toEqual([
+      "https://www.fressnapf.de/magazin/hund/gesundheit/zahnstein/",
+    ]);
+  });
+});
