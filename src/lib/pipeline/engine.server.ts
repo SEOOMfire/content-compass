@@ -741,6 +741,9 @@ export async function runStep(
         const res = await runPrompt<string>(tpl, {
           language: market.language,
           language_variant: market.language_variant ?? "",
+          country: market.country ?? "",
+          institutions: market.institutions ?? {},
+          forbidden_claims: market.forbidden_claims ?? [],
           brand: market.brand ?? "",
           address_form: market.address_form ?? "",
           style_profile: input.style_profile,
