@@ -184,17 +184,32 @@ function JobsPage() {
               key={j.id}
               to="/jobs/$jobId"
               params={{ jobId: j.id }}
-              className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2 hover:bg-accent"
+              className="block rounded-md border border-border px-3 py-2 hover:bg-accent"
             >
-              <span className="truncate text-sm">{j.source_url}</span>
-              <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                <span>
-                  {(j.markets as { country?: string } | null)?.country ?? "—"}
+              <span className="flex items-center justify-between gap-4">
+                <span className="truncate text-sm">{j.source_url}</span>
+                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {(j.markets as { country?: string } | null)?.country ?? "—"}
+                  </span>
+                  <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
+                    {j.status}
+                  </Badge>
                 </span>
-                <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
-                  {j.status}
-                </Badge>
               </span>
+              {j.status === "running" && (
+                <span className="mt-2 flex items-center gap-3">
+                  <Progress value={progressOf(j)} className="h-2 flex-1" />
+                  <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                    {progressOf(j)} %
+                  </span>
+                </span>
+              )}
+              {j.status === "running" && j.current_step && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {STEP_BY_KEY[j.current_step]?.label ?? j.current_step}
+                </span>
+              )}
             </Link>
           ))}
         </CardContent>
