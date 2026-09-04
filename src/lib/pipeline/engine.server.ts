@@ -782,6 +782,8 @@ export async function runStep(
         full_text: full,
         brand: market.brand ?? "",
         forbidden_terms: market.forbidden_claims ?? [],
+        institutions: market.institutions ?? {},
+        country: market.country ?? "",
         language: market.language,
       });
       return {
