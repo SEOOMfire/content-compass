@@ -31,7 +31,14 @@ import {
   S10OutputSchema,
   validateStepData,
 } from "./schemas";
-import { buildTargetUrls, hreflangHint, lastPathSegment, matchHreflang } from "./paths";
+import {
+  buildTargetUrls,
+  hreflangHint,
+  lastPathSegment,
+  matchHreflang,
+  PathMapError,
+} from "./paths";
+import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkLocalizedTable } from "./tables";
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
@@ -126,6 +133,7 @@ export async function runStep(
           ...doc,
           sections: doc.sections.length,
           hreflang_count: doc.hreflang.length,
+          content_links: doc.contentLinks?.length ?? 0,
         },
         context: { source: doc },
       };
@@ -203,7 +211,11 @@ export async function runStep(
       let hubEntries: PoolEntry[] = ctx.linkPool?.entries ?? [];
       let hubUrl = ctx.linkPool?.hub_url ?? null;
       if (!found && !hubEntries.length) {
-        const hub = await fetchHubEntries(hubMarket(market), job.source_url);
+        const hub = await fetchHubEntries(
+          hubMarket(market),
+          job.source_url,
+          ctx.derivedPathMap ?? {},
+        );
         hubEntries = hub.entries;
         hubUrl = hub.hub_url;
         evidence.push({
@@ -367,8 +379,28 @@ export async function runStep(
     }
 
     case "S7a_link_pool": {
+      const source = requireSource(ctx);
       const hm = hubMarket(market);
-      const pool = await buildLinkPool(hm, job.source_url);
+      // Stufe 0 · hreflang-Äquivalente der im Content verlinkten Quellartikel.
+      let harvest = ctx.hreflangHarvest ?? null;
+      if (!harvest) {
+        const res = await harvestHreflangEquivalents(source.contentLinks ?? [], hm);
+        harvest = {
+          checked: res.checked,
+          entries: res.entries,
+          derived_path_map: res.derivedPathMap,
+          harvested_at: new Date().toISOString(),
+        };
+      }
+      const derivedMap = { ...harvest.derived_path_map, ...(ctx.derivedPathMap ?? {}) };
+      const pool = await buildLinkPool(hm, job.source_url, derivedMap);
+      const known = new Set(pool.entries.map((e) => e.url));
+      for (const e of harvest.entries) {
+        if (!known.has(e.url)) {
+          known.add(e.url);
+          pool.entries.unshift(e);
+        }
+      }
       if (!pool.entries.length) {
         throw new Error(
           `Kein Link-Pool aufbaubar: keine der ${pool.fetches.length} abgerufenen Seiten lieferte interne Links. ` +
@@ -402,11 +434,16 @@ export async function runStep(
         output: {
           hub_url: pool.hub_url,
           fetches: pool.fetches,
+          hreflang_pool: harvest.entries.length,
+          hreflang_checked: harvest.checked.length,
+          derived_path_map: derivedMap,
           entries: pool.entries.length,
           siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
           by_origin: countBy(pool.entries.map((e) => e.origin)),
         },
         context: {
+          hreflangHarvest: harvest,
+          derivedPathMap: derivedMap,
           linkPool: {
             hub_url: pool.hub_url,
             built_at: new Date().toISOString(),
