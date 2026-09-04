@@ -19,7 +19,9 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 - **Verarbeitung:** serverseitiger GET mit festem User-Agent und Redirect-Auflösung.
   HTML-Parsing (`node-html-parser`): Title, H1, Meta-Description, Canonical,
   `hreflang`-Alternates, Abschnitte (Überschrift + Fließtext, hierarchisch nach H2/H3),
-  Tabellen (in Markdown konvertiert, inkl. Caption), Wortzahl und ein Outline-String.
+  Tabellen (in Markdown konvertiert, inkl. Caption), Wortzahl, ein Outline-String und
+  die internen **Content-Links** (Fließtext, ohne Navigation/Header/Footer) als Basis
+  der hreflang-Ernte in S3/S7a.
 - **Ausgabe:** `context.source` = `SourceDoc`. Step-Output enthält die Kopfdaten und
   die Anzahl der Abschnitte.
 - **Fehler:** HTTP ≠ 200 bricht den Schritt ab („Quelle antwortete mit HTTP …").
@@ -39,8 +41,12 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 - **Eingabe:** `context.slug.slug_candidates`, `market.magazine_root` (Fallback `market.domain`),
   `market.path_map`, Hub-Treffer aus S7a, hreflang-Alternates der Quelle.
 - **Verarbeitung:** Nachweiskette in fester Reihenfolge: (1) hreflang-Alternate der
-  Quelle mit passender Markt-Locale, (2) Treffer im Link-Pool/Hub, (3) über `path_map`
-  segmentweise übersetzte Slug-URLs. Jede Kandidaten-URL wird per Live-GET (`verifyUrl`)
+  Quelle mit passender Markt-Locale, (2) Treffer im Link-Pool/Hub, (2b) **hreflang-Ernte**:
+  die im Fließtext der Quelle verlinkten Artikel (max. 12) werden abgerufen und ihr
+  hreflang-Alternate für die Markt-Locale gelesen — daraus entstehen belegte Ziel-URLs
+  und eine **abgeleitete Pfadübersetzung** (`gesundheit → health`), die Lücken in
+  `market.path_map` schließt (die gepflegte `path_map` hat Vorrang), (3) über
+  `path_map` + abgeleitete Paare segmentweise übersetzte Slug-URLs. Jede Kandidaten-URL wird per Live-GET (`verifyUrl`)
   geprüft (HTTP-Status, Canonical-Vergleich, Soft-404). Der erste valide Treffer gewinnt
   und wird per `extractPage` vollständig geladen; alle Nachweise werden gespeichert.
 - **Ausgabe:** `context.target = { status, url, checked[], doc }` mit
@@ -64,7 +70,10 @@ Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
 
 - **Eingabe:** `jobs.source_url`, `market.path_map`, `market.domain`, optional
   `market.search_url_pattern`.
-- **Verarbeitung:** Aus dem DE-Pfad werden über `path_map` Hub-Kandidaten im Zielmarkt
+- **Verarbeitung:** Stufe 0 ist die hreflang-Ernte aus S3 (Ergebnis wird wiederverwendet):
+  belegte Ziel-URLs wandern mit `origin = hreflang` vorne in den Pool, die abgeleitete
+  Pfadübersetzung fließt in den Hub-Aufbau ein.
+  Aus dem DE-Pfad werden über `path_map` (inkl. abgeleiteter Paare) Hub-Kandidaten im Zielmarkt
   gebildet (`/magazin/hund/rassen/mastiff/` → `/magazyn/pies/rasy/`, danach `/magazyn/pies/`).
   Mit **maximal 8 Abrufen** werden geladen: die erste erreichbare Hub-Seite, die
   Navigation und bis zu drei Geschwisterartikel (deren Text dient S5 als Stilreferenz).
@@ -191,7 +200,7 @@ Guthabenfehler werden gesondert gemeldet. Der tatsächlich gesendete Prompt wird
 - **Kein Gesamtindex:** S3/S5/S7 arbeiten ausschließlich auf dem Link-Pool. Ein Job
   wird nie wegen eines leeren Index blockiert.
 - **S3-Ziel-URLs:** der komplette DE-Pfad wird segmentweise über
-  `market.path_map` übersetzt (`/magazin/hund/rassen/<slug>/` →
+  `market.path_map` (ergänzt um aus hreflang-Paaren abgeleitete Segmente) übersetzt (`/magazin/hund/rassen/<slug>/` →
   `/magazyn/pies/rasy/<slug>/`). Ein fehlender Map-Eintrag bricht mit Klartext
   ab. Ein hreflang-Alternate mit passender Markt-Locale hat Vorrang; sonst wird
   ein `hreflang_hint` gespeichert und exportiert.
