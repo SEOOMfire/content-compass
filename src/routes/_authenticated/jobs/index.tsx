@@ -70,7 +70,37 @@ function JobsPage() {
       if (error) throw error;
       return data;
     },
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((j: { status: string }) => j.status === "running") ? 3000 : false,
   });
+
+  const runningIds = ((jobs.data ?? []) as { id: string; status: string }[])
+    .filter((j) => j.status === "running")
+    .map((j) => j.id);
+
+  const runningSteps = useQuery({
+    queryKey: ["jobs-progress", runningIds.join(",")],
+    enabled: runningIds.length > 0,
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("job_steps")
+        .select("job_id,status")
+        .in("job_id", runningIds);
+      if (error) throw error;
+      return data as { job_id: string; status: string }[];
+    },
+  });
+
+  function progressOf(job: { id: string; status: string; current_step: string | null }) {
+    const total = PIPELINE.length;
+    if (job.status === "done") return 100;
+    const rows = (runningSteps.data ?? []).filter((s) => s.job_id === job.id);
+    const done = rows.filter((s) => s.status === "done" || s.status === "done_with_errors").length;
+    if (done > 0) return Math.round((done / total) * 100);
+    const order = job.current_step ? (STEP_BY_KEY[job.current_step]?.order ?? 0) - 1 : 0;
+    return Math.round((Math.max(order, 0) / total) * 100);
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
