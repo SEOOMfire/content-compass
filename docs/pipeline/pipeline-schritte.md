@@ -1,226 +1,413 @@
-# Pipeline-Schritte S1–S13 im Detail
+# Die 14 Stationen im Detail
 
-Legende je Schritt: **Eingabe** (woher die Daten kommen) · **Verarbeitung** (was der
-Code/das LLM tut) · **Ausgabe** (was gespeichert wird) · **Fehler/Sonderfälle**.
+Jede Station wird nach demselben Muster erklärt:
 
-Implementierung: `src/lib/pipeline/engine.server.ts` (Orchestrierung),
-`extract.server.ts` (Fetch/Parsing/Verifikation), `ai.server.ts` (LLM),
-`pool.ts` (Pool-Retrieval, Gap-Report), `hub.server.ts` (Hub-Harvesting, Site-Suche).
-Reine, testbare Logik: `schemas.ts` (Zod-Schemas je Schritt), `paths.ts`
-(Pfadübersetzung/hreflang), `tables.ts` (Tabellenprüfung), `plan.ts`
-(Plan → Abschnittseingaben), `deps.ts` (Abhängigkeitsprüfung).
-Regressionstest: `tests/pipeline-regression.test.ts` (`bun test`).
+- **Was reinkommt** — welche Informationen die Station benutzt
+- **Was passiert** — was das Programm bzw. die KI damit macht
+- **Was rauskommt** — welches Ergebnis gespeichert wird
+- **Wenn es klemmt** — typische Fehler und was sie bedeuten
 
----
-
-## S1 · Quelle extrahieren (`S1_extract_source`)
-
-- **Eingabe:** `jobs.source_url` (deutsche Quellseite).
-- **Verarbeitung:** serverseitiger GET mit festem User-Agent und Redirect-Auflösung.
-  HTML-Parsing (`node-html-parser`): Title, H1, Meta-Description, Canonical,
-  `hreflang`-Alternates, Abschnitte (Überschrift + Fließtext, hierarchisch nach H2/H3),
-  Tabellen (in Markdown konvertiert, inkl. Caption), Wortzahl, ein Outline-String und
-  die internen **Content-Links** (Fließtext, ohne Navigation/Header/Footer) als Basis
-  der hreflang-Ernte in S3/S7a.
-- **Ausgabe:** `context.source` = `SourceDoc`. Step-Output enthält die Kopfdaten und
-  die Anzahl der Abschnitte.
-- **Fehler:** HTTP ≠ 200 bricht den Schritt ab („Quelle antwortete mit HTTP …").
-- **Kein LLM.**
-
-## S2 · Ziel-Slug ermitteln (`S2_resolve_slug`)
-
-- **Eingabe:** `source.h1 ?? source.title ?? source_url`, `market.language`, `market.country`.
-- **Verarbeitung:** Prompt `resolve_target_slug`. Das Modell übersetzt den Fachbegriff
-  in die Zielsprache und schlägt Slug-Varianten vor. Der Code normalisiert jeden
-  Vorschlag (`slugify`: Kleinschreibung, Diakritika entfernen, Bindestriche).
-- **Ausgabe:** `context.slug = { term_translated, slug_candidates[] }`.
-- **Sonderfall:** Liefert das Modell keine Kandidaten, wird der übersetzte Begriff selbst verwendet.
-
-## S3 · Zielstatus prüfen (`S3_target_status`)
-
-- **Eingabe:** `context.slug.slug_candidates`, `market.magazine_root` (Fallback `market.domain`),
-  `market.path_map`, Hub-Treffer aus S7a, hreflang-Alternates der Quelle.
-- **Verarbeitung:** Nachweiskette in fester Reihenfolge: (1) hreflang-Alternate der
-  Quelle mit passender Markt-Locale, (2) Treffer im Link-Pool/Hub, (2b) **hreflang-Ernte**:
-  die im Fließtext der Quelle verlinkten Artikel (max. 12) werden abgerufen und ihr
-  hreflang-Alternate für die Markt-Locale gelesen — daraus entstehen belegte Ziel-URLs
-  und eine **abgeleitete Pfadübersetzung** (`gesundheit → health`), die Lücken in
-  `market.path_map` schließt (die gepflegte `path_map` hat Vorrang), (3) über
-  `path_map` + abgeleitete Paare segmentweise übersetzte Slug-URLs. Jede Kandidaten-URL wird per Live-GET (`verifyUrl`)
-  geprüft (HTTP-Status, Canonical-Vergleich, Soft-404). Der erste valide Treffer gewinnt
-  und wird per `extractPage` vollständig geladen; alle Nachweise werden gespeichert.
-- **Ausgabe:** `context.target = { status, url, checked[], doc }` mit
-  - `EXISTS` – eine Kandidaten-URL antwortet valide mit 200,
-  - `VERIFIED_404` – mindestens eine URL liefert nachweislich 404,
-  - `NOT_IN_INDEX` – kein 404-Nachweis und kein Pool-/hreflang-Treffer (Aussage:
-    unbekannt, nicht „existiert nicht").
-- **Kein LLM.**
-
-## S4 · Abgleich (`S4_compare`)
-
-- **Eingabe:** `source.outline`/Wortzahl und – falls vorhanden – `target.doc`
-  (Outline, Wortzahl, Textauszug auf 4 000 Zeichen begrenzt).
-- **Verarbeitung:** Prompt `compare` ermittelt inhaltliche Lücken, Dubletten und
-  Aktualisierungsbedarf.
-- **Ausgabe:** `context.compare`.
-- **Sonderfall:** Existiert keine Zielseite, wird der Schritt übersprungen und
-  `{ new_page: true }` gesetzt (Neuerstellung statt Abgleich).
-
-## S7a · Link-Pool aufbauen (`S7a_link_pool`)
-
-- **Eingabe:** `jobs.source_url`, `market.path_map`, `market.domain`, optional
-  `market.search_url_pattern`.
-- **Verarbeitung:** Stufe 0 ist die hreflang-Ernte aus S3 (Ergebnis wird wiederverwendet):
-  belegte Ziel-URLs wandern mit `origin = hreflang` vorne in den Pool, die abgeleitete
-  Pfadübersetzung fließt in den Hub-Aufbau ein.
-  Aus dem DE-Pfad werden über `path_map` (inkl. abgeleiteter Paare) Hub-Kandidaten im Zielmarkt
-  gebildet (`/magazin/hund/rassen/mastiff/` → `/magazyn/pies/rasy/`, danach `/magazyn/pies/`).
-  Mit **maximal 8 Abrufen** werden geladen: die erste erreichbare Hub-Seite, die
-  Navigation und bis zu drei Geschwisterartikel (deren Text dient S5 als Stilreferenz).
-  Alle internen Links werden extrahiert, klassifiziert (`hub`, `nav`, `inline`, `footer`)
-  und in `link_pool` persistiert (TTL 7 Tage).
-- **Ausgabe:** `context.linkPool = { hub_url, entries[], siblings[], fetches[] }`.
-- **Kein LLM.** Kein Gesamtindex, kein Sitemap-Crawl.
-
-## S5 · Stilprofil (`S5_style_profile`)
-
-- **Eingabe:** Cache `style_profiles` (Markt + `content_type = magazine`); sonst die in
-  S7a geladenen Geschwisterartikel (Volltextauszüge).
-- **Verarbeitung:** Cache-Treffer wird direkt verwendet. Andernfalls Prompt
-  `style_profile` über die Referenztexte (max. 12 000 Zeichen) → Tonalität, Satzlänge,
-  Ansprache, typische Strukturen. Ergebnis wird im Cache abgelegt.
-- **Ausgabe:** `context.styleProfile`.
-- **Fehler:** Keine Geschwisterartikel → S7a erneut ausführen.
-
-## S6 · Lokalisierungsplan (`S6_localization_plan`)
-
-- **Eingabe:** Quell-Outline (je Abschnitt Überschrift + 500 Zeichen Text) und ein
-  Marktprofil (Land, Sprache, Marke, Institutionen, verbotene Claims, Anredeform).
-- **Verarbeitung:** Prompt `localization_plan` (Modell `openai/gpt-5.5`) entscheidet je
-  Abschnitt `keep` / `adapt` / `replace` / `drop`, notiert Lokalisierungshinweise und
-  schlägt Anker (`anchor`, `intent`, optional `path_type`) für interne Links vor.
-- **Ausgabe:** `context.plan.sections[]`.
-
-## S7 · Linkkandidaten (`S7_link_candidates`)
-
-- **Eingabe:** Alle Anker aus dem Plan, der Link-Pool aus S7a.
-- **Verarbeitung:** Zweistufig. Stufe 1 = Retrieval im Pool (`retrieveFromPool`:
-  Termgewichtung über Ankertext, Slug und Breadcrumb plus Trigramm-Ähnlichkeit,
-  optionaler `path_type`-Filter, max. 8 Kandidaten je Anker). Stufe 2 nur für Anker
-  ohne Treffer: gezielte Site-Suche über `market.search_url_pattern` (bzw. Firecrawl,
-  falls konfiguriert), **maximal 10 Suchanfragen je Job**; Treffer wandern in den Pool.
-  Jede Suche wird in `context.linkSearchLog` protokolliert.
-- **Ausgabe:** `context.linkCandidates` = `{ anker: [{url, title, path_type}] }`.
-- **Kein LLM.** Kandidaten stammen ausschließlich aus Pool oder Site-Suche.
-
-## S8 · Linkauswahl (`S8_link_select`)
-
-- **Eingabe:** Kandidatenliste je Anker (nummeriert, **ohne URLs im Prompt**).
-- **Verarbeitung:** Prompt `link_select` gibt `candidate_index` (1..n) oder `null` zurück.
-  Der Code prüft die Nummer gegen die Liste und löst erst dann die URL auf.
-- **Ausgabe:** `context.linkSelection = [{ anchor, url|null, confidence }]`.
-- **Regel:** Freie URL-Erzeugung durch das Modell ist ausgeschlossen — kein Kandidat
-  oder ungültige Nummer bedeutet `url: null` (kein Link).
-
-## S9 · Linkprüfung (`S9_link_verify`)
-
-- **Eingabe:** `context.linkSelection`.
-- **Verarbeitung:** Alte `verified_links` des Jobs werden gelöscht (Idempotenz).
-  Jede ausgewählte URL wird per GET geprüft: HTTP 200, Canonical passend,
-  kein Soft-404. Nur bestandene Links werden gespeichert.
-- **Ausgabe:** `context.verifiedLinks` und Zeilen in `verified_links` (`source = pool`).
-  Durchgefallene Kandidaten werden aus dem Pool entfernt und als `context.brokenLinks`
-  protokolliert.
-- **Kein LLM.**
-
-## S10 · Tabellen lokalisieren (`S10_localize_tables`)
-
-- **Eingabe:** `source.tables` (Markdown), Sprache, Land, Institutionen des Markts.
-- **Verarbeitung:** Prompt `localize_table` je Tabelle: Übersetzung, Einheiten,
-  Normen und Institutionen an den Zielmarkt anpassen, Tabellenstruktur bleibt erhalten.
-- **Ausgabe:** `context.tables = [{ index, markdown }]`. Ohne Tabellen: leere Liste.
-
-## S11 · Content erzeugen (`S11_generate_content`)
-
-- **Eingabe:** je Planabschnitt der zugehörige deutsche Abschnitt, Aktion und Notizen;
-  zusätzlich Stilprofil, Sprache/Sprachvariante, Marke, Anredeform, bereits geschriebene
-  Überschriften (gegen Dubletten), verifizierte Links und lokalisierte Tabellen.
-- **Verarbeitung:** Prompt `generate_content` (Modell `openai/gpt-5.5`) abschnittsweise.
-  `drop`-Abschnitte werden übersprungen. Fehlt ein Plan, werden die Quellabschnitte mit
-  Aktion `adapt` verwendet. Es dürfen ausschließlich die übergebenen verifizierten
-  Links verwendet werden.
-- **Ausgabe:** `context.content = [{ heading, markdown }]`.
-
-## S12 · QA (`S12_qa`)
-
-- **Eingabe:** Gesamttext aus S11, Marke, verbotene Claims, Sprache.
-- **Verarbeitung:** Prompt `qa` prüft Sprache/Variante, Markenbezeichnung, verbotene
-  Claims, Anredeform, Dubletten und Linkkonsistenz.
-- **Ausgabe:** `context.qa` (Befunde und Schweregrad).
-- **Fehler:** Ohne Content bricht der Schritt ab („bitte S11 ausführen").
-
-## S13 · Export (`S13_export`)
-
-- **Eingabe:** Slug/H1, Quell-URL, Zielstatus (inkl. Nachweise), Content-Abschnitte,
-  verifizierte Links, Link-Pool-Metadaten, `market.closing_note`.
-- **Verarbeitung:** Zusammenbau eines Markdown-Dokuments mit Kopfzeilen, Abschnitten,
-  Linkliste (inkl. HTTP-Status), **Gap-Report** (Anker ohne verifizierten Link, verworfene
-  Kandidaten, ob die Site-Suche lief) und Marktabschluss.
-- **Ausgabe:** `context.exportMarkdown`; Step-Output enthält die Zeichenlänge.
-  Der Job wird auf `done` gesetzt.
-- **Kein LLM.**
+Bei jeder Station steht außerdem, ob eine KI beteiligt ist. Viele Stationen kommen
+ganz ohne KI aus — das ist Absicht, denn alles, was man exakt berechnen oder nachprüfen
+kann, soll auch exakt berechnet und nicht geraten werden.
 
 ---
 
-## Ausführungsmodi
+## S1 · Den deutschen Artikel lesen
 
-- **Einzelschritt** – Button „Ausführen"/„Erneut" je Schritt.
-- **Ab hier** – Startet bei diesem Schritt und läuft bis S13 oder bis zum ersten Fehler.
-- **Komplett ausführen** – S1 bis S13 am Stück.
+**Was reinkommt:** Die deutsche Artikel-Adresse, die beim Anlegen des Jobs eingegeben
+wurde.
 
-## LLM-Aufrufe (`ai.server.ts`)
+**Was passiert:** Das Tool ruft die Seite auf — so, wie es ein Browser tun würde — und
+zerlegt sie in ihre Bestandteile:
 
-Prompts werden mit Variablen gerendert, über das Lovable-AI-Gateway aufgerufen
-(Chat Completions bzw. Responses-API für `openai/*`), das JSON-Ergebnis wird robust
-extrahiert und bei ungültiger Antwort bis zu dreimal wiederholt. Rate-Limit- und
-Guthabenfehler werden gesondert gemeldet. Der tatsächlich gesendete Prompt wird als
-`prompt_snapshot` am Schritt gespeichert.
+- Überschrift der Seite und die große Hauptüberschrift
+- die Kurzbeschreibung für Suchmaschinen
+- die „offizielle" Adresse der Seite (Seiten können unter mehreren Adressen erreichbar
+  sein; eine davon ist die maßgebliche)
+- Hinweise auf Sprachversionen: Viele Seiten verraten selbst, unter welcher Adresse es
+  sie in anderen Ländern gibt. Diese Angaben sind Gold wert und werden später mehrfach
+  genutzt.
+- alle Abschnitte mit Überschrift und Fließtext, in ihrer Gliederung
+- alle Tabellen
+- die Wortzahl und eine Inhaltsübersicht
+- **die Links, die im Artikeltext selbst stehen** — nur die aus dem Fließtext, nicht
+  aus Menü, Kopf- oder Fußzeile. Diese Liste ist die Grundlage für einen sehr wichtigen
+  Trick in S3 und S7a.
+
+**Was rauskommt:** Der vollständig zerlegte deutsche Artikel. Alle folgenden Stationen
+arbeiten mit dieser Fassung, nicht mit der Live-Seite.
+
+**Wenn es klemmt:** Antwortet die Seite nicht mit „OK", bricht die Station ab
+(„Quelle antwortete mit HTTP …"). Meist ist die Adresse falsch oder die Seite
+vorübergehend nicht erreichbar.
+
+**KI beteiligt:** nein.
 
 ---
 
-## Verbindliche Verdrahtungsregeln (Fix-Stufe P0–P2)
+## S2 · Wie soll die Seite im Zielland heißen?
 
-- **Schemas:** S2, S6, S8 und S10 werden gegen Zod-Schemas validiert
-  (`schemas.ts`). Ein Schemafehler bricht den Schritt ab; es gibt keinen stillen
-  Fallback auf leere Felder.
-- **Aktionsvokabular:** ausschließlich `uebersetzen`, `lokalisieren`,
-  `umschreiben`, `streichen`. `streichen` wird in S11 übersprungen.
-- **S2-Eingabe:** das letzte Segment der Quell-URL (`mastiff`); die H1 dient nur
-  als Kontext.
-- **Kein Gesamtindex:** S3/S5/S7 arbeiten ausschließlich auf dem Link-Pool. Ein Job
-  wird nie wegen eines leeren Index blockiert.
-- **S3-Ziel-URLs:** der komplette DE-Pfad wird segmentweise über
-  `market.path_map` (ergänzt um aus hreflang-Paaren abgeleitete Segmente) übersetzt (`/magazin/hund/rassen/<slug>/` →
-  `/magazyn/pies/rasy/<slug>/`). Ein fehlender Map-Eintrag bricht mit Klartext
-  ab. Ein hreflang-Alternate mit passender Markt-Locale hat Vorrang; sonst wird
-  ein `hreflang_hint` gespeichert und exportiert.
-- **S10:** je Tabelle ein echter LLM-Aufruf, bis zu zwei Retries. Gleiche
-  Zeilenzahl Pflicht; bei nichtdeutscher Zielsprache ist eine identische Ausgabe
-  der Fehler „Tabelle wurde nicht lokalisiert“.
-- **S11-Eingabe:** je Abschnitt ein vollständiges `GenerateSectionInput`
-  (`de_heading`, ungekürzter `de_body`, `target_heading`, `action`, `notes`,
-  `has_table`, `table_markdown`, `written_headings`, `verified_links`,
-  `style_profile`, `market`). Zuordnung über `de_heading`; fehlt die Zuordnung,
-  bricht der Schritt ab. Tabellen gehen nur an Abschnitte mit
-  `has_table === true`, sonst `null`.
-- **Input-Snapshot:** darf gekürzt werden, der Modell-Payload nie.
-- **Abhängigkeiten:** vor jedem Schritt geprüft; fehlt eine Voraussetzung (auch
-  ein fehlender Link-Pool), wird der Schritt `blocked`. Ein leerer Gesamtindex ist
-  kein Blocker mehr – den gibt es nicht mehr.
-- **Jobstatus:** `done` nur, wenn kein Schritt `error` oder `blocked` ist, sonst
-  `done_with_errors`.
-- **Telemetrie:** `run_count` wird vor der Ausführung erhöht; S10/S11 aggregieren
-  Modell und Tokenverbrauch über alle Teilaufrufe.
-- **Unverändert:** das LLM erzeugt nie URLs (S8 wählt nur Kandidatennummern),
-  jede ausgelieferte URL hat HTTP 200 mit passendem Canonical und ohne Soft-404,
-  und `EXISTS`/`VERIFIED_404`/`NOT_IN_INDEX` bleiben getrennt.
+**Was reinkommt:** Die Hauptüberschrift des deutschen Artikels und das letzte Stück der
+deutschen Adresse (z. B. `mastiff`) sowie Sprache und Land des Zielmarkts.
+
+**Was passiert:** Die KI übersetzt den Fachbegriff in die Zielsprache und schlägt
+mehrere mögliche Adressnamen vor. Das Programm bereinigt jeden Vorschlag anschließend
+nach festen Regeln: alles klein, Umlaute und Akzente auflösen, Leerzeichen zu
+Bindestrichen. Aus „Bullmastiff" wird so z. B. `bulmastif`.
+
+**Was rauskommt:** Der übersetzte Begriff und eine Liste bereinigter Adressnamen-Vorschläge.
+
+**Wenn es klemmt:** Liefert die KI gar keinen Vorschlag, nimmt das Tool einfach den
+übersetzten Begriff selbst.
+
+**KI beteiligt:** ja.
+
+---
+
+## S3 · Gibt es die Seite im Zielland schon?
+
+Das ist die kniffligste Station, deshalb ausführlich. Die Frage „gibt es diesen Artikel
+in Polen schon?" klingt einfach, ist es aber nicht: Wir können nicht die ganze Website
+durchsuchen (dort liegen Hunderttausende Seiten), und raten dürfen wir nicht.
+
+Deshalb arbeitet das Tool eine **Beweiskette** in fester Reihenfolge ab und hört auf,
+sobald es einen belastbaren Nachweis hat.
+
+**Stufe 1 — Die deutsche Seite verrät es selbst.**
+Wenn der deutsche Artikel eine Sprachversion für genau unser Zielland angibt, ist das
+die vom Betreiber selbst erklärte Zieladresse. Besser wird der Beweis nicht.
+
+**Stufe 2 — Wir kennen die Seite bereits.**
+Falls im gesammelten Link-Vorrat des Ziellandes (siehe S7a) schon eine passende Seite
+liegt, wird sie geprüft.
+
+**Stufe 2b — Der Umweg über die Nachbarartikel.**
+Der wichtigste Kniff. Der deutsche Artikel verlinkt in seinem Text auf andere deutsche
+Artikel — meist zehn oder mehr. Das Tool ruft bis zu zwölf davon auf und liest bei jedem
+nach, unter welcher Adresse es ihn im Zielland gibt. Daraus entstehen zwei Dinge:
+
+1. Eine Liste **belegter** Zieladressen — Seiten, von denen wir sicher wissen, dass es
+   sie gibt. Sie wandern in den Link-Vorrat.
+2. Eine **automatisch gelernte Übersetzungstabelle für Adressbestandteile.** Wenn
+   `…/magazin/hund/gesundheit/xyz/` in Irland `…/magazine/dog/health/xyz/` heißt, dann
+   weiß das Tool ab sofort: `gesundheit` heißt hier `health`. Vorher musste man das von
+   Hand pflegen — und ein fehlender Eintrag hat den ganzen Job abgebrochen. Diese Lücken
+   schließen sich jetzt von selbst. (Von Hand gepflegte Einträge haben weiterhin Vorrang.)
+
+**Stufe 3 — Adresse selbst zusammenbauen.**
+Erst wenn keine der vorherigen Stufen greift, baut das Tool die Zieladresse aus dem
+deutschen Pfad zusammen: jedes Adressstück wird übersetzt (gepflegte Tabelle plus die
+in Stufe 2b gelernten Paare), hinten kommen die Namensvorschläge aus S2.
+
+**Und dann wird geprüft.** Jede Kandidatenadresse wird tatsächlich aufgerufen: Antwortet
+sie mit „OK"? Weist sie sich selbst als diese Adresse aus? Ist es keine getarnte
+Fehlerseite (eine Seite, die „nicht gefunden" anzeigt, aber technisch „OK" meldet)?
+Der erste saubere Treffer gewinnt und wird komplett heruntergeladen. Alle Nachweise
+werden mitprotokolliert.
+
+**Was rauskommt:** Einer von drei Zuständen:
+
+- **EXISTS** — Die Seite gibt es, hier ist die Adresse.
+- **VERIFIED_404** — Wir haben nachweislich geprüft: Die Seite gibt es nicht.
+- **NOT_IN_INDEX** — Wir konnten es nicht feststellen. Das heißt ausdrücklich **nicht**
+  „gibt es nicht" — es heißt „unbekannt".
+
+**KI beteiligt:** nein. Diese Station argumentiert ausschließlich mit Beweisen.
+
+---
+
+## S4 · Was fehlt der bestehenden Seite?
+
+**Was reinkommt:** Die Gliederung und Wortzahl des deutschen Artikels und — falls es die
+Zielseite gibt — deren Gliederung, Wortzahl und ein Textauszug.
+
+**Was passiert:** Die KI vergleicht beide und benennt inhaltliche Lücken, Dopplungen und
+veraltete Stellen.
+
+**Was rauskommt:** Eine Liste der Unterschiede.
+
+**Sonderfall:** Existiert im Zielland noch keine Seite, wird diese Station übersprungen
+und vermerkt: „Neuanlage". Es gibt dann nichts zu vergleichen.
+
+**KI beteiligt:** ja.
+
+---
+
+## S7a · Den Link-Vorrat aufbauen
+
+Damit die KI später sinnvoll intern verlinken kann, braucht sie eine Auswahl echter
+Seiten aus dem Zielland. Früher wurde dafür die komplette Website erfasst — bei rund
+einer Million Adressen ist das nicht machbar. Stattdessen holt das Tool **gezielt wenige,
+dafür hochrelevante Seiten**.
+
+**Was passiert, der Reihe nach:**
+
+1. **Die Ernte aus S3 wird übernommen.** Die dort belegten Zieladressen (aus den
+   Nachbarartikeln) kommen direkt und ganz vorn in den Vorrat. Sie sind thematisch
+   garantiert passend, weil sie im Original-Artikel verlinkt waren.
+2. **Übersichtsseiten finden.** Aus dem deutschen Pfad wird der übergeordnete Bereich im
+   Zielland abgeleitet — aus `/magazin/hund/rassen/mastiff/` wird `/magazyn/pies/rasy/`,
+   ersatzweise `/magazyn/pies/`. Das sind Seiten, die viele verwandte Artikel auflisten.
+3. **Mit höchstens acht Abrufen** werden geladen: die erste erreichbare Übersichtsseite,
+   die Navigation und bis zu drei „Geschwisterartikel" (Artikel aus demselben Bereich).
+   Die Begrenzung ist bewusst — sie hält den Job schnell und schont die Zielseite.
+4. **Alle darin gefundenen internen Links** werden eingesammelt und danach sortiert,
+   woher sie stammen (Übersichtsseite, Navigation, Fließtext, Fußzeile).
+
+Der Vorrat wird gespeichert und eine Woche lang wiederverwendet, damit nicht jeder Job
+dieselben Seiten erneut abruft. Die Geschwisterartikel dienen zusätzlich als
+Stilvorlage in S5.
+
+**Was rauskommt:** Der Link-Vorrat, die Geschwisterartikel und ein Protokoll, welche
+Seiten abgerufen wurden.
+
+**KI beteiligt:** nein.
+
+---
+
+## S5 · Den Schreibstil des Ziellandes lernen
+
+**Was reinkommt:** Zuerst wird nachgesehen, ob für diesen Markt schon ein Stilprofil
+gespeichert ist. Falls nicht: die Geschwisterartikel aus S7a.
+
+**Was passiert:** Die KI liest die Beispieltexte und beschreibt, wie dort geschrieben
+wird: Tonfall, Satzlänge, Anrede (gesiezt oder geduzt), typische Textbausteine. Das
+Ergebnis wird gespeichert, damit die nächsten Jobs im selben Markt es sofort nutzen können.
+
+**Was rauskommt:** Das Stilprofil.
+
+**Wenn es klemmt:** Ohne Geschwisterartikel geht es nicht — dann muss S7a noch einmal laufen.
+
+**KI beteiligt:** ja (außer bei einem Treffer im Speicher).
+
+---
+
+## S6 · Den Bauplan erstellen
+
+**Was reinkommt:** Die Gliederung des deutschen Artikels (je Abschnitt Überschrift und
+ein Textanfang) plus das Marktprofil: Land, Sprache, Marke, wichtige Institutionen,
+verbotene Aussagen, Anredeform.
+
+**Was passiert:** Die KI entscheidet für **jeden** Abschnitt eine von vier Aktionen:
+
+- **übersetzen** — inhaltlich gleich lassen
+- **lokalisieren** — inhaltlich anpassen (andere Behörde, andere Rechtslage, andere
+  Gewohnheiten)
+- **umschreiben** — neu aufsetzen
+- **streichen** — im Zielland nicht sinnvoll, entfällt
+
+Dazu notiert sie Hinweise für die Umsetzung und schlägt vor, an welchen Stellen ein
+interner Link sinnvoll wäre — mit dem gewünschten Linktext und der Absicht dahinter
+(aber ausdrücklich **ohne** Adresse; die kommt später aus dem Vorrat).
+
+**Was rauskommt:** Der Bauplan mit einem Eintrag je Abschnitt.
+
+**KI beteiligt:** ja.
+
+---
+
+## S7 · Linkvorschläge sammeln
+
+**Was reinkommt:** Alle gewünschten Linktexte aus dem Bauplan und der Link-Vorrat aus S7a.
+
+**Was passiert, in zwei Stufen:**
+
+- **Stufe 1 — Suche im Vorrat.** Für jeden gewünschten Linktext werden die passendsten
+  Seiten aus dem Vorrat herausgesucht. Bewertet werden die Übereinstimmung von Wörtern
+  im Linktext, in der Adresse und im Navigationspfad sowie die Ähnlichkeit der
+  Schreibweise (damit auch knappe Abweichungen noch treffen). Höchstens acht Vorschläge
+  je Linktext.
+- **Stufe 2 — nur für Linktexte ohne Treffer.** Dann wird die interne Suche der
+  Zielwebsite befragt — **maximal zehn Suchanfragen pro Job**. Neue Funde wandern in den
+  Vorrat. Jede Suche wird protokolliert.
+
+**Was rauskommt:** Je Linktext eine nummerierte Vorschlagsliste.
+
+**KI beteiligt:** nein. Vorschläge stammen ausschließlich aus dem Vorrat oder aus der
+Suche der echten Website.
+
+---
+
+## S8 · Die KI wählt aus — aber nur eine Nummer
+
+**Was reinkommt:** Je Linktext die Vorschlagsliste — **nummeriert und ohne Adressen**.
+Die KI sieht bewusst nur Titel und Thema, nie die Adresse selbst.
+
+**Was passiert:** Die KI antwortet mit einer Nummer oder mit „keiner passt". Das
+Programm prüft, ob die Nummer überhaupt in der Liste vorkommt, und schlägt erst dann
+die zugehörige Adresse nach.
+
+**Was rauskommt:** Je Linktext eine Adresse oder ausdrücklich „kein Link".
+
+**Warum so umständlich?** Weil eine KI, die Adressen ausgeben darf, welche erfindet.
+Über den Umweg der Nummer ist das technisch ausgeschlossen. Ungültige Nummer oder kein
+Vorschlag bedeutet schlicht: kein Link.
+
+**KI beteiligt:** ja — aber nur zur Auswahl.
+
+---
+
+## S9 · Jeden Link anklicken
+
+**Was reinkommt:** Die Auswahl aus S8.
+
+**Was passiert:** Frühere Prüfergebnisse dieses Jobs werden gelöscht (damit eine
+Wiederholung sauber startet). Dann wird jede ausgewählte Adresse tatsächlich aufgerufen
+und dreifach geprüft: Antwortet sie mit „OK"? Weist sie sich selbst als diese Adresse
+aus? Ist es keine getarnte Fehlerseite? Nur bestandene Links werden gespeichert.
+
+**Was rauskommt:** Die Liste der geprüften Links. Durchgefallene Kandidaten werden aus
+dem Vorrat entfernt (damit sie nicht wieder vorgeschlagen werden) und als „fehlerhafte
+Links" protokolliert.
+
+**KI beteiligt:** nein.
+
+---
+
+## S10 · Tabellen ins Zielland übertragen
+
+**Was reinkommt:** Die Tabellen aus dem deutschen Artikel sowie Sprache, Land und die
+relevanten Institutionen des Zielmarkts.
+
+**Was passiert:** Jede Tabelle wird einzeln von der KI bearbeitet: übersetzen, Einheiten
+umstellen, Normen und Institutionen durch die im Zielland gültigen ersetzen. Der Aufbau
+der Tabelle — Spalten und Zeilenzahl — bleibt unverändert.
+
+**Was rauskommt:** Die überarbeiteten Tabellen. Hat der Artikel keine Tabellen, ist das
+Ergebnis leer und die Station trotzdem erfolgreich.
+
+**Wenn es klemmt:** Kommt eine Tabelle unverändert zurück, obwohl die Zielsprache nicht
+Deutsch ist, gilt das als Fehler („Tabelle wurde nicht lokalisiert") und die Station
+versucht es erneut (bis zu zweimal). Auch eine veränderte Zeilenzahl ist ein Fehler.
+
+**KI beteiligt:** ja, ein Aufruf je Tabelle.
+
+---
+
+## S11 · Den Text schreiben
+
+Die eigentliche Textproduktion — und sie läuft **abschnittsweise**, nicht in einem
+Rutsch. Das ergibt bessere Qualität und macht Fehler leichter auffindbar.
+
+**Was reinkommt, je Abschnitt:**
+
+- der vollständige deutsche Abschnittstext (ungekürzt),
+- die geplante Aktion aus S6 und die zugehörigen Hinweise,
+- die vorgesehene Überschrift in der Zielsprache,
+- das Stilprofil aus S5,
+- Marke, Sprache, Sprachvariante und Anredeform des Marktes,
+- die bereits geschriebenen Überschriften — damit sich nichts wiederholt,
+- die geprüften Links aus S9,
+- die passende Tabelle, falls dieser Abschnitt eine hat.
+
+**Was passiert:** Die KI schreibt den Abschnitt. Abschnitte mit der Aktion „streichen"
+werden übersprungen. Es dürfen ausschließlich die übergebenen, geprüften Links
+verwendet werden — keine anderen.
+
+**Was rauskommt:** Der fertige Text, Abschnitt für Abschnitt.
+
+**Wenn es klemmt:** Lässt sich ein Bauplan-Abschnitt keinem deutschen Abschnitt
+zuordnen, bricht die Station bewusst ab statt heimlich mit leerem Text zu arbeiten —
+dann muss S6 wiederholt werden.
+
+**KI beteiligt:** ja.
+
+---
+
+## S12 · Qualitätskontrolle
+
+**Was reinkommt:** Der gesamte Text aus S11, dazu Marke, verbotene Aussagen und Sprache
+des Marktes.
+
+**Was passiert:** Die KI prüft systematisch: Stimmt die Sprache und die regionale
+Variante? Wird die richtige Marke genannt? Kommen verbotene Aussagen vor
+(z. B. gesundheitsbezogene Versprechen)? Ist die Anrede durchgehend gleich? Gibt es
+Dopplungen? Passen die Links inhaltlich zum Umfeld?
+
+**Was rauskommt:** Eine Befundliste mit Schweregrad.
+
+**Wenn es klemmt:** Ohne Text keine Prüfung — dann muss erst S11 laufen.
+
+**KI beteiligt:** ja.
+
+---
+
+## S13 · Die fertige Datei
+
+**Was reinkommt:** Adressname und Überschrift, die deutsche Quelladresse, der Zielstatus
+samt Nachweisen aus S3, die Textabschnitte, die geprüften Links, Angaben zum Link-Vorrat
+und der Marktabschluss (ein fester Textbaustein je Markt).
+
+**Was passiert:** Alles wird zu einem Dokument zusammengesetzt: Kopfdaten, Textabschnitte,
+Linkliste mit Prüfergebnis und — wichtig für die Redaktion — ein **Lückenbericht**: Für
+welche gewünschten Linktexte konnte kein geprüfter Link gefunden werden? Welche
+Kandidaten sind durchgefallen? Wurde die Website-Suche bemüht?
+
+**Was rauskommt:** Das fertige Markdown-Dokument. Der Job gilt danach als abgeschlossen.
+
+**KI beteiligt:** nein.
+
+---
+
+# Wie man die Pipeline bedient
+
+Es gibt drei Möglichkeiten, Stationen zu starten:
+
+- **Einzeln** — „Ausführen" bzw. „Erneut" bei einer Station. Für gezielte Korrekturen.
+- **Ab hier** — startet bei dieser Station und läuft bis zum Ende oder bis zum ersten
+  Fehler.
+- **Komplett** — alles von S1 bis S13 am Stück.
+
+Wiederholen ist immer ungefährlich: Eine Station überschreibt nur ihr eigenes Ergebnis,
+alles andere bleibt bestehen. Nachfolgende Stationen arbeiten dann automatisch mit dem
+neuen Stand.
+
+# Was die Statusangaben bedeuten
+
+| Status | Bedeutung |
+| --- | --- |
+| **offen** | Noch nicht gelaufen. |
+| **läuft** | Gerade in Arbeit. |
+| **erledigt** | Sauber durchgelaufen. |
+| **Fehler** | Abgebrochen. Die Fehlermeldung steht im Klartext an der Station und im Report. |
+| **blockiert** | Es fehlt eine Voraussetzung aus einer früheren Station. Kein Fehler im eigentlichen Sinn — erst die vorgelagerte Station nachholen. |
+
+Der Job insgesamt gilt nur dann als **fertig**, wenn keine einzige Station auf „Fehler"
+oder „blockiert" steht. Sonst lautet der Jobstatus **„fertig mit Fehlern"** — die Datei
+existiert, ist aber unvollständig und braucht eine redaktionelle Nachkontrolle.
+
+# Wie die KI beauftragt wird
+
+Die Anweisungen an die KI sind keine fest verdrahteten Programmzeilen, sondern
+bearbeitbare Vorlagen im Admin-Bereich. Vor dem Absenden werden Platzhalter durch die
+echten Daten ersetzt (etwa den deutschen Abschnittstext). Genau dieser fertige Auftrag
+wird an der Station gespeichert und lässt sich im Report nachlesen.
+
+Antwortet die KI unbrauchbar, versucht das Tool es bis zu dreimal erneut. Ist das
+Nutzungslimit erreicht oder das Guthaben aufgebraucht, wird das als eigene, klar
+benannte Meldung ausgegeben — nicht als allgemeiner Fehler.
+
+# Feste Regeln, auf die man sich verlassen kann
+
+- Die KI erzeugt **niemals** Adressen. In S8 wählt sie nur Nummern.
+- Jede ausgelieferte Adresse wurde aufgerufen, antwortete mit „OK", wies sich korrekt
+  aus und war keine getarnte Fehlerseite.
+- „nachweislich nicht vorhanden" und „unbekannt" werden nie vermischt.
+- Kein Abschnitt geht verloren: Jeder Bauplan-Abschnitt muss einem deutschen Abschnitt
+  zugeordnet sein, sonst bricht die Station ab.
+- Nur vier Aktionen sind erlaubt: übersetzen, lokalisieren, umschreiben, streichen.
+- Für die Anzeige werden Daten gekürzt — für die KI niemals.
+- Fehlende Übersetzungen von Adressbestandteilen blockieren den Job nicht mehr; sie
+  werden in S3 automatisch aus den Nachbarartikeln gelernt.
+
+---
+
+# Für Entwickler: Wo liegt was?
+
+Ablaufsteuerung `src/lib/pipeline/engine.server.ts` · Seitenabruf und Verifikation
+`extract.server.ts` · KI-Aufrufe `ai.server.ts` · hreflang-Ernte `hreflang.server.ts` ·
+Link-Vorrat und Lückenbericht `pool.ts` und `hub.server.ts`. Reine, testbare Logik:
+`schemas.ts` (Prüfung der KI-Antworten), `paths.ts` (Adressübersetzung),
+`tables.ts`, `plan.ts` (Bauplan → Schreibauftrag), `deps.ts` (Voraussetzungsprüfung).
+Regressionstests: `tests/pipeline-regression.test.ts` (`bun test`).

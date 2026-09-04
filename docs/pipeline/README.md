@@ -1,47 +1,90 @@
-# Dokumentation · Content-Lokalisierungs-Pipeline
+# Wie das Lokalisierungs-Tool arbeitet
 
-Diese Dokumentation beschreibt exakt, was in jedem Pipeline-Schritt passiert, welche
-Daten hineingehen, wie sie verarbeitet werden und was herauskommt.
+Diese Dokumentation erklärt in einfacher Sprache, was das Tool macht — Schritt für
+Schritt, ohne Programmierkenntnisse.
 
-## Inhalt
+## Was macht das Tool überhaupt?
 
-| Datei | Inhalt |
-| --- | --- |
-| [`pipeline-schritte.md`](./pipeline-schritte.md) | S1–S13 im Detail: Input, Verarbeitung, Output, Fehlerfälle |
-| [`datenmodell.md`](./datenmodell.md) | Tabellen, Job-Kontext, Persistenz und Idempotenz |
-| [`export-report.md`](./export-report.md) | Der Prozess-Report (.md) je Job: Aufbau und Nutzung |
+Wir haben deutsche Ratgeber-Artikel auf fressnapf.de. Diese Artikel sollen in anderen
+Ländern erscheinen (z. B. auf maxizoo.pl in Polen oder maxizoo.ie in Irland) — aber
+nicht als reine Übersetzung, sondern **an das jeweilige Land angepasst**: richtige
+Sprache, passende Marke, landesübliche Einheiten, richtige Behörden und Verbände,
+und vor allem: **interne Links, die im Zielland auch wirklich existieren**.
 
-## Grundprinzipien
+Genau das macht dieses Tool automatisch. Man gibt eine deutsche Artikel-Adresse ein und
+wählt den Zielmarkt. Am Ende kommt ein fertiger Text als Datei heraus, den die Redaktion
+prüfen und veröffentlichen kann.
 
-1. **Alle Netzwerk- und LLM-Aufrufe laufen serverseitig** (`createServerFn`, `*.server.ts`).
-   Kein Schlüssel und kein Crawl läuft im Browser.
-2. **Das LLM erzeugt niemals URLs.** In S8 wählt das Modell ausschließlich eine
-   Kandidatennummer aus einer serverseitig erzeugten Liste; die URL löst der Code auf.
-3. **Jede ausgegebene URL ist verifiziert**: HTTP 200 + Canonical-Prüfung + Soft-404-Prüfung.
-4. **Zielstatus wird unterschieden**: `EXISTS`, `VERIFIED_404`, `NOT_IN_INDEX`.
-5. **Jeder Schritt ist einzeln wiederholbar und idempotent.** Ein erneuter Lauf
-   überschreibt Status, Output und den betroffenen Teil des Job-Kontexts.
-6. **Prompts sind editierbar, versioniert und testbar** (Admin → Prompts).
+## Die wichtigsten Spielregeln
 
-## Datenfluss auf einen Blick
+1. **Die KI erfindet niemals Links.**
+   Das ist die zentrale Regel. Eine KI würde ohne Weiteres Adressen erfinden, die gut
+   aussehen, aber ins Leere führen. Deshalb sammelt das Tool zuerst selbst echte Links
+   im Zielland, nummeriert sie, und die KI darf nur noch sagen: „Nimm Nummer 3."
+   Welche Adresse hinter Nummer 3 steckt, weiß nur das Programm.
+
+2. **Jeder Link wird vor der Auslieferung angeklickt.**
+   Das Tool ruft jede Adresse tatsächlich auf und prüft: Antwortet die Seite mit „OK"?
+   Ist es wirklich die Seite, die sie zu sein vorgibt? Ist es keine getarnte
+   Fehlerseite? Nur was besteht, kommt in den Text.
+
+3. **„Existiert nicht" und „Wissen wir nicht" sind zwei verschiedene Dinge.**
+   Das Tool sagt nie „die Seite gibt es nicht", wenn es das nur vermutet. Es
+   unterscheidet klar zwischen „nachweislich nicht vorhanden" und „konnten wir nicht
+   feststellen".
+
+4. **Jeder Schritt kann einzeln wiederholt werden.**
+   Geht etwas schief, muss nicht alles von vorn laufen. Man wiederholt nur den einen
+   Schritt; die Ergebnisse der anderen bleiben erhalten.
+
+5. **Alles passiert auf dem Server, nichts im Browser.**
+   Zugangsschlüssel und Seitenabrufe bleiben geschützt.
+
+6. **Die Anweisungen an die KI sind editierbar.**
+   Im Admin-Bereich lässt sich jeder KI-Auftrag ändern, testen und auf eine frühere
+   Fassung zurücksetzen — ohne Programmierung.
+
+## Der Ablauf in Kurzform
+
+Ein Job durchläuft 14 Stationen. Kurz zusammengefasst:
 
 ```text
-Quell-URL (DE)
-   │  S1 extract            → SourceDoc (Struktur, Tabellen, hreflang)
-   ▼
-Slug-Kandidaten (S2) ─► Zielstatus (S3) ─► Abgleich (S4, nur wenn Ziel existiert)
-   │
-   ├─ Stilprofil (S5, gecached je Markt)
-   ▼
-Lokalisierungsplan (S6)
-   │
-   ├─ Link-Pool (S7a) → Linkkandidaten (S7)
-   ├─ Linkauswahl per Nummer (S8)
-   └─ Linkverifikation per GET (S9)
-   │
-Tabellen lokalisieren (S10) ─► Content erzeugen (S11) ─► QA (S12) ─► Export (S13)
+Deutscher Artikel wird gelesen
+        ↓
+Wie soll die Seite im Zielland heißen? (Adressname finden)
+        ↓
+Gibt es die Seite im Zielland schon? (nachsehen und belegen)
+        ↓
+Falls ja: Was fehlt dort im Vergleich zum deutschen Text?
+        ↓
+Link-Vorrat im Zielland sammeln (echte, existierende Seiten)
+        ↓
+Schreibstil des Ziellandes lernen
+        ↓
+Bauplan erstellen: Welcher Abschnitt wird übersetzt, angepasst, neu geschrieben, gestrichen?
+        ↓
+Passende Links vorschlagen → KI wählt aus → jeder Link wird geprüft
+        ↓
+Tabellen ins Zielland übertragen (Einheiten, Normen, Institutionen)
+        ↓
+Text abschnittsweise schreiben
+        ↓
+Qualitätskontrolle (Sprache, Marke, verbotene Aussagen)
+        ↓
+Fertige Datei zum Herunterladen
 ```
 
-Jeder Schritt schreibt seinen Input-Snapshot, seinen Output, Modell, Prompt-Snapshot,
-Laufzeit, Laufzähler und ggf. den Fehler nach `job_steps`. Daraus wird der
-Prozess-Report erzeugt.
+## Die einzelnen Dokumente
+
+| Datei | Worum es geht |
+| --- | --- |
+| [`pipeline-schritte.md`](./pipeline-schritte.md) | Jede der 14 Stationen ausführlich erklärt: Was geht rein, was passiert, was kommt raus, was kann schiefgehen |
+| [`datenmodell.md`](./datenmodell.md) | Wo das Tool welche Informationen speichert und warum |
+| [`export-report.md`](./export-report.md) | Der Prozess-Report: eine Datei, die den kompletten Durchlauf eines Jobs nachvollziehbar macht |
+
+## Mitschrift: Nichts passiert unsichtbar
+
+Zu jeder Station wird protokolliert, was sie bekommen hat, was sie gemacht hat, wie
+lange es dauerte, welches KI-Modell beteiligt war und ob es einen Fehler gab. Diese
+Mitschrift kann man als Datei herunterladen (siehe Prozess-Report). Damit lässt sich
+im Nachhinein genau nachvollziehen, warum ein Text so aussieht, wie er aussieht.
