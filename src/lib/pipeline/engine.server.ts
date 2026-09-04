@@ -854,6 +854,13 @@ export async function runStep(
   }
 }
 
+/** H1 nie als Slug ausgeben: Bindestriche auflösen, ersten Buchstaben groß. */
+function headline(raw: string): string {
+  const text = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function requireSource(ctx: JobContext) {
   if (!ctx.source) throw new Error("Schritt S1 muss zuerst laufen.");
   return ctx.source;
