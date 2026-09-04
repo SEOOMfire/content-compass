@@ -32,6 +32,18 @@ function pathMapOf(market: MarketPathInfo): Record<string, string> {
   return out;
 }
 
+/** market.path_map plus abgeleitete hreflang-Paare (letztere ergänzen nur Lücken). */
+export function mergedMap(
+  market: MarketPathInfo,
+  extraMap: Record<string, string> = {},
+): Record<string, string> {
+  const derived: Record<string, string> = {};
+  for (const [k, v] of Object.entries(extraMap)) {
+    if (typeof v === "string" && v.trim()) derived[k.toLowerCase()] = v.trim();
+  }
+  return { ...derived, ...pathMapOf(market) };
+}
+
 export class PathMapError extends Error {
   constructor(public missing: string[]) {
     super(
@@ -54,10 +66,11 @@ export function buildTargetUrl(
   sourceUrl: string,
   market: MarketPathInfo,
   slugCandidate: string,
+  extraMap: Record<string, string> = {},
 ): string {
   const segs = pathSegments(sourceUrl);
   if (!segs.length) throw new PathMapError(["(kein Pfad in der Quell-URL)"]);
-  const map = pathMapOf(market);
+  const map = mergedMap(market, extraMap);
   const prefix = segs.slice(0, -1);
   const missing = prefix.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
@@ -69,8 +82,9 @@ export function buildTargetUrls(
   sourceUrl: string,
   market: MarketPathInfo,
   slugCandidates: string[],
+  extraMap: Record<string, string> = {},
 ): string[] {
-  return slugCandidates.map((s) => buildTargetUrl(sourceUrl, market, s));
+  return slugCandidates.map((s) => buildTargetUrl(sourceUrl, market, s, extraMap));
 }
 
 export interface HreflangAlternate {
@@ -119,10 +133,14 @@ export function hreflangHint(
  * danach eine Ebene höher als Fallback.
  * /magazin/hund/rassen/mastiff/ → /magazyn/pies/rasy/ , /magazyn/pies/
  */
-export function buildHubUrls(sourceUrl: string, market: MarketPathInfo): string[] {
+export function buildHubUrls(
+  sourceUrl: string,
+  market: MarketPathInfo,
+  extraMap: Record<string, string> = {},
+): string[] {
   const segs = pathSegments(sourceUrl).slice(0, -1);
   if (!segs.length) throw new PathMapError(["(kein Elternpfad in der Quell-URL)"]);
-  const map = pathMapOf(market);
+  const map = mergedMap(market, extraMap);
   const missing = segs.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
   const translated = segs.map((s) => map[s.toLowerCase()]!);

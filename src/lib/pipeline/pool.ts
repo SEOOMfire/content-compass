@@ -4,7 +4,7 @@
  */
 
 export type PoolPathType = "magazine" | "category" | "other";
-export type PoolOrigin = "hub" | "nav" | "inline" | "footer" | "search";
+export type PoolOrigin = "hub" | "nav" | "inline" | "footer" | "search" | "hreflang";
 
 export interface PoolEntry {
   url: string;
