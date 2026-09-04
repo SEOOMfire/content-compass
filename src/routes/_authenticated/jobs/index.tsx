@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { PIPELINE, STEP_BY_KEY } from "@/lib/pipeline/types";
 
 export const Route = createFileRoute("/_authenticated/jobs/")({
   head: () => ({
