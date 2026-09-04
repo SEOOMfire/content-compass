@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { PIPELINE, STEP_BY_KEY } from "@/lib/pipeline/types";
 
 export const Route = createFileRoute("/_authenticated/jobs/")({
   head: () => ({
@@ -68,7 +70,37 @@ function JobsPage() {
       if (error) throw error;
       return data;
     },
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((j: { status: string }) => j.status === "running") ? 3000 : false,
   });
+
+  const runningIds = ((jobs.data ?? []) as { id: string; status: string }[])
+    .filter((j) => j.status === "running")
+    .map((j) => j.id);
+
+  const runningSteps = useQuery({
+    queryKey: ["jobs-progress", runningIds.join(",")],
+    enabled: runningIds.length > 0,
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("job_steps")
+        .select("job_id,status")
+        .in("job_id", runningIds);
+      if (error) throw error;
+      return data as { job_id: string; status: string }[];
+    },
+  });
+
+  function progressOf(job: { id: string; status: string; current_step: string | null }) {
+    const total = PIPELINE.length;
+    if (job.status === "done") return 100;
+    const rows = (runningSteps.data ?? []).filter((s) => s.job_id === job.id);
+    const done = rows.filter((s) => s.status === "done" || s.status === "done_with_errors").length;
+    if (done > 0) return Math.round((done / total) * 100);
+    const order = job.current_step ? (STEP_BY_KEY[job.current_step]?.order ?? 0) - 1 : 0;
+    return Math.round((Math.max(order, 0) / total) * 100);
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -152,17 +184,32 @@ function JobsPage() {
               key={j.id}
               to="/jobs/$jobId"
               params={{ jobId: j.id }}
-              className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2 hover:bg-accent"
+              className="block rounded-md border border-border px-3 py-2 hover:bg-accent"
             >
-              <span className="truncate text-sm">{j.source_url}</span>
-              <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                <span>
-                  {(j.markets as { country?: string } | null)?.country ?? "—"}
+              <span className="flex items-center justify-between gap-4">
+                <span className="truncate text-sm">{j.source_url}</span>
+                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {(j.markets as { country?: string } | null)?.country ?? "—"}
+                  </span>
+                  <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
+                    {j.status}
+                  </Badge>
                 </span>
-                <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
-                  {j.status}
-                </Badge>
               </span>
+              {j.status === "running" && (
+                <span className="mt-2 flex items-center gap-3">
+                  <Progress value={progressOf(j)} className="h-2 flex-1" />
+                  <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                    {progressOf(j)} %
+                  </span>
+                </span>
+              )}
+              {j.status === "running" && j.current_step && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {STEP_BY_KEY[j.current_step]?.label ?? j.current_step}
+                </span>
+              )}
             </Link>
           ))}
         </CardContent>
