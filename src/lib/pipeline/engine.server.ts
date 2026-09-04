@@ -741,6 +741,9 @@ export async function runStep(
         const res = await runPrompt<string>(tpl, {
           language: market.language,
           language_variant: market.language_variant ?? "",
+          country: market.country ?? "",
+          institutions: market.institutions ?? {},
+          forbidden_claims: market.forbidden_claims ?? [],
           brand: market.brand ?? "",
           address_form: market.address_form ?? "",
           style_profile: input.style_profile,
@@ -779,6 +782,8 @@ export async function runStep(
         full_text: full,
         brand: market.brand ?? "",
         forbidden_terms: market.forbidden_claims ?? [],
+        institutions: market.institutions ?? {},
+        country: market.country ?? "",
         language: market.language,
       });
       return {
@@ -796,10 +801,14 @@ export async function runStep(
       const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
       const gaps = buildGapReport(anchors, ctx.verifiedLinks ?? [], ctx.linkSearchLog ?? []);
       const broken = ctx.brokenLinks ?? [];
+      const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
+      const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
+      const readingMinutes = Math.max(1, Math.round(targetWords / 200));
       const md = [
-        `# ${ctx.slug?.term_translated ?? source.h1 ?? ""}`,
+        `# ${headline(ctx.slug?.term_translated ?? source.h1 ?? "")}`,
         "",
         `> Quelle: ${source.url}`,
+        `> Wortzahl (Ziel): ${targetWords} · Lesezeit: ${readingMinutes} Min.`,
         `> Zielstatus: ${ctx.target?.status ?? "-"}${ctx.target?.url ? ` (${ctx.target.url})` : ""}`,
         ctx.target?.resolution_method ? `> Zielermittlung: ${ctx.target.resolution_method}` : "",
         ctx.target?.hreflang_hint ? `> hreflang-Hinweis: ${ctx.target.hreflang_hint}` : "",
@@ -843,6 +852,13 @@ export async function runStep(
     default:
       throw new Error(`Unbekannter Schritt: ${stepKey}`);
   }
+}
+
+/** H1 nie als Slug ausgeben: Bindestriche auflösen, ersten Buchstaben groß. */
+function headline(raw: string): string {
+  const text = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function requireSource(ctx: JobContext) {
