@@ -4,7 +4,22 @@
  */
 
 export type PoolPathType = "magazine" | "category" | "other";
-export type PoolOrigin = "hub" | "nav" | "inline" | "footer" | "search" | "hreflang";
+export type PoolOrigin =
+  | "hub"
+  | "nav"
+  | "inline"
+  | "footer"
+  | "search"
+  | "hreflang"
+  | "candidate";
+
+/**
+ * `scope`:
+ *  - "target"           – belegte URL im Zielmarkt, direkt verwendbar
+ *  - "source_candidate" – deutsche Quell-URL, noch ohne geprüftes hreflang.
+ *    Darf erst nach einem Abruf (fetched = true) verwendet werden.
+ */
+export type PoolScope = "target" | "source_candidate";
 
 export interface PoolEntry {
   url: string;
@@ -13,6 +28,16 @@ export interface PoolEntry {
   origin: PoolOrigin;
   source_page: string;
   breadcrumb?: string | null;
+  /** Wurde die Seite tatsächlich abgerufen? */
+  fetched?: boolean;
+  /** Kurzbeschreibung der Seite – nur vorhanden, wenn abgerufen wurde. */
+  intent?: string | null;
+  scope?: PoolScope;
+}
+
+/** Nur belegte Ziel-URLs sind unmittelbar verwendbar. */
+export function isUsable(e: PoolEntry): boolean {
+  return e.scope !== "source_candidate" && e.fetched !== false;
 }
 
 /** Mindest-Score, unterhalb dessen Stufe 2 (Site-Suche) ausgelöst wird. */
