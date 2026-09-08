@@ -15,6 +15,13 @@
       "when": 1788435585265,
       "tag": "0001_create_link_pool",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788853142074,
+      "tag": "0002_link_pool_candidate_columns",
+      "breakpoints": true
     }
   ]
 }
