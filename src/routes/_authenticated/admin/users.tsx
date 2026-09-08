@@ -142,6 +142,8 @@ function UsersPage() {
           </p>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
+
 }
