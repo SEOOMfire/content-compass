@@ -16,7 +16,9 @@ import {
 import {
   derivePathPairs,
   extractContentLinks,
+  isEditorialUrl,
 } from "../src/lib/pipeline/hreflang.server";
+import { isUsable, retrieveFromPool } from "../src/lib/pipeline/pool";
 import { checkLocalizedTable, tableRows } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
 import {
