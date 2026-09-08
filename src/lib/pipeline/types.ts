@@ -201,8 +201,16 @@ export interface JobContext {
   derivedPathMap?: Record<string, string>;
   /** Ergebnis der hreflang-Ernte über die Content-Links der Quellseite. */
   hreflangHarvest?: {
-    checked: { de_url: string; status: number; target_url: string | null }[];
+    checked: {
+      de_url: string;
+      status: number;
+      target_url: string | null;
+      page_type?: "magazine" | "shop";
+      discovered?: number;
+    }[];
     entries: PoolEntry[];
+    /** Zweite Ebene: nicht abgerufene Quellkandidaten (Anker + Adresse). */
+    discovered?: PoolEntry[];
     derived_path_map: Record<string, string>;
     harvested_at: string;
   };
