@@ -101,10 +101,11 @@ export function retrieveFromPool(
   entries: PoolEntry[],
   opts: { pathType?: string | undefined; limit?: number } = {},
 ): PoolHit[] {
+  const usable = entries.filter(isUsable);
   const pool =
     opts.pathType && opts.pathType !== "other"
-      ? entries.filter((e) => e.path_type === opts.pathType)
-      : entries;
+      ? usable.filter((e) => e.path_type === opts.pathType)
+      : usable;
   if (!pool.length) return [];
   const qTokens = tokens(query);
   const qTri = trigrams(query);
