@@ -257,6 +257,7 @@ export async function runStep(
           harvest = {
             checked: res.checked,
             entries: res.entries,
+            discovered: res.discovered,
             derived_path_map: res.derivedPathMap,
             harvested_at: new Date().toISOString(),
           };
@@ -265,8 +266,9 @@ export async function runStep(
         evidence.push({
           step: "hreflang_pool",
           detail:
-            `${harvest.checked.length} im Content verlinkte Quellartikel geprüft, ` +
-            `${harvest.entries.length} hreflang-Äquivalente im Zielmarkt gefunden` +
+            `${harvest.checked.length} im Content verlinkte Nachbarseiten abgerufen, ` +
+            `${harvest.entries.length} hreflang-Äquivalente im Zielmarkt gefunden, ` +
+            `${harvest.discovered?.length ?? 0} weitere Quellkandidaten (nicht abgerufen) erfasst` +
             (Object.keys(harvest.derived_path_map).length
               ? `; abgeleitete Pfade: ${Object.entries(harvest.derived_path_map)
                   .map(([k, v]) => `${k}→${v}`)
@@ -388,6 +390,7 @@ export async function runStep(
         harvest = {
           checked: res.checked,
           entries: res.entries,
+          discovered: res.discovered,
           derived_path_map: res.derivedPathMap,
           harvested_at: new Date().toISOString(),
         };
@@ -399,6 +402,14 @@ export async function runStep(
         if (!known.has(e.url)) {
           known.add(e.url);
           pool.entries.unshift(e);
+        }
+      }
+      // Zweite Ebene: nicht abgerufene Quellkandidaten – werden mitgeführt und
+      // gespeichert, sind aber (scope = source_candidate) nicht direkt nutzbar.
+      for (const e of harvest.discovered ?? []) {
+        if (!known.has(e.url)) {
+          known.add(e.url);
+          pool.entries.push(e);
         }
       }
       if (!pool.entries.length) {
@@ -424,7 +435,10 @@ export async function runStep(
             anchor_text: e.anchor_text,
             path_type: e.path_type,
             origin: e.origin,
-            http_status: 200,
+            fetched: e.fetched !== false,
+            intent: e.intent ?? null,
+            scope: e.scope ?? "target",
+            http_status: e.fetched === false ? null : 200,
             fetched_at: new Date().toISOString(),
           })) as never,
           { onConflict: "market_id,content_type,url" },
@@ -436,6 +450,8 @@ export async function runStep(
           fetches: pool.fetches,
           hreflang_pool: harvest.entries.length,
           hreflang_checked: harvest.checked.length,
+          nachbarseiten_abgerufen: harvest.checked.length,
+          quellkandidaten_nicht_abgerufen: harvest.discovered?.length ?? 0,
           derived_path_map: derivedMap,
           entries: pool.entries.length,
           siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),

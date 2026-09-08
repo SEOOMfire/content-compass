@@ -4,7 +4,22 @@
  */
 
 export type PoolPathType = "magazine" | "category" | "other";
-export type PoolOrigin = "hub" | "nav" | "inline" | "footer" | "search" | "hreflang";
+export type PoolOrigin =
+  | "hub"
+  | "nav"
+  | "inline"
+  | "footer"
+  | "search"
+  | "hreflang"
+  | "candidate";
+
+/**
+ * `scope`:
+ *  - "target"           – belegte URL im Zielmarkt, direkt verwendbar
+ *  - "source_candidate" – deutsche Quell-URL, noch ohne geprüftes hreflang.
+ *    Darf erst nach einem Abruf (fetched = true) verwendet werden.
+ */
+export type PoolScope = "target" | "source_candidate";
 
 export interface PoolEntry {
   url: string;
@@ -13,6 +28,16 @@ export interface PoolEntry {
   origin: PoolOrigin;
   source_page: string;
   breadcrumb?: string | null;
+  /** Wurde die Seite tatsächlich abgerufen? */
+  fetched?: boolean;
+  /** Kurzbeschreibung der Seite – nur vorhanden, wenn abgerufen wurde. */
+  intent?: string | null;
+  scope?: PoolScope;
+}
+
+/** Nur belegte Ziel-URLs sind unmittelbar verwendbar. */
+export function isUsable(e: PoolEntry): boolean {
+  return e.scope !== "source_candidate" && e.fetched !== false;
 }
 
 /** Mindest-Score, unterhalb dessen Stufe 2 (Site-Suche) ausgelöst wird. */
@@ -76,10 +101,11 @@ export function retrieveFromPool(
   entries: PoolEntry[],
   opts: { pathType?: string | undefined; limit?: number } = {},
 ): PoolHit[] {
+  const usable = entries.filter(isUsable);
   const pool =
     opts.pathType && opts.pathType !== "other"
-      ? entries.filter((e) => e.path_type === opts.pathType)
-      : entries;
+      ? usable.filter((e) => e.path_type === opts.pathType)
+      : usable;
   if (!pool.length) return [];
   const qTokens = tokens(query);
   const qTri = trigrams(query);
@@ -123,7 +149,7 @@ export function matchHubEntry(
   term: string,
   slugCandidates: string[] = [],
 ): { entry: PoolEntry; score: number } | null {
-  const hub = entries.filter((e) => e.origin === "hub");
+  const hub = entries.filter((e) => e.origin === "hub" && isUsable(e));
   if (!hub.length) return null;
   const wanted = [term, ...slugCandidates].filter(Boolean).map(norm);
   let best: { entry: PoolEntry; score: number } | null = null;

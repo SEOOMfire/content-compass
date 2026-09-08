@@ -124,36 +124,45 @@ export type Database = {
         Row: {
           anchor_text: string | null
           content_type: string
+          fetched: boolean
           fetched_at: string
           http_status: number | null
           id: string
+          intent: string | null
           market_id: string
           origin: string
           path_type: string
+          scope: string
           source_page: string
           url: string
         }
         Insert: {
           anchor_text?: string | null
           content_type?: string
+          fetched?: boolean
           fetched_at?: string
           http_status?: number | null
           id?: string
+          intent?: string | null
           market_id: string
           origin?: string
           path_type?: string
+          scope?: string
           source_page: string
           url: string
         }
         Update: {
           anchor_text?: string | null
           content_type?: string
+          fetched?: boolean
           fetched_at?: string
           http_status?: number | null
           id?: string
+          intent?: string | null
           market_id?: string
           origin?: string
           path_type?: string
+          scope?: string
           source_page?: string
           url?: string
         }

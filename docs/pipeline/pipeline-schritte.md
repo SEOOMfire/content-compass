@@ -84,12 +84,20 @@ liegt, wird sie geprüft.
 
 **Stufe 2b — Der Umweg über die Nachbarartikel.**
 Der wichtigste Kniff. Der deutsche Artikel verlinkt in seinem Text auf andere deutsche
-Artikel — meist zehn oder mehr. Das Tool ruft bis zu zwölf davon auf und liest bei jedem
-nach, unter welcher Adresse es ihn im Zielland gibt. Daraus entstehen zwei Dinge:
+Seiten — meist zehn oder mehr. Das Tool ruft bis zu **20** davon auf, immer mit **einer
+Sekunde Abstand**, damit die Seite nicht belastet wird, und liest bei jeder nach, unter
+welcher Adresse es sie im Zielland gibt. Aufgerufen werden auch Produkt- und
+Kategorieseiten, denn auch die können passen. Daraus entstehen drei Dinge:
 
 1. Eine Liste **belegter** Zieladressen — Seiten, von denen wir sicher wissen, dass es
    sie gibt. Sie wandern in den Link-Vorrat.
-2. Eine **automatisch gelernte Übersetzungstabelle für Adressbestandteile.** Wenn
+2. Eine **zweite Ebene an Kandidaten.** Aus den aufgerufenen Magazinseiten (nicht aus
+   Produkt- oder Kategorieseiten) werden alle weiterführenden Magazin-Links mit Linktext
+   und Adresse gesammelt. Diese Seiten werden **nicht** aufgerufen; im Vorrat steht bei
+   ihnen ausdrücklich „nicht abgerufen". Sie dürfen so noch nicht verwendet werden —
+   später kann anhand von Linktext und Adresse entschieden werden, welche davon
+   nachgeladen und auf eine Entsprechung im Zielland geprüft werden.
+3. Eine **automatisch gelernte Übersetzungstabelle für Adressbestandteile.** Wenn
    `…/magazin/hund/gesundheit/xyz/` in Irland `…/magazine/dog/health/xyz/` heißt, dann
    weiß das Tool ab sofort: `gesundheit` heißt hier `health`. Vorher musste man das von
    Hand pflegen — und ein fehlender Eintrag hat den ganzen Job abgebrochen. Diese Lücken

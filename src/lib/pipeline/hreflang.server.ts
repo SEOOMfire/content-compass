@@ -15,7 +15,22 @@ import { fetchHtml } from "./extract.server";
 import { matchHreflang, pathSegments } from "./paths";
 import type { PoolEntry, PoolPathType } from "./pool";
 
-export const HREFLANG_FETCH_BUDGET = 12;
+/** Bis zu 20 im Fließtext verlinkte Nachbarseiten werden abgerufen. */
+export const HREFLANG_FETCH_BUDGET = 20;
+/** Mindestabstand zwischen zwei Abrufen, um die Quellseite nicht zu belasten. */
+export const HREFLANG_FETCH_DELAY_MS = 1000;
+
+const MAGAZINE_PATH =
+  /\/(magazin|magazine|magazyn|ratgeber|blog|guide|conseils|poradnik|advice)(\/|$)/i;
+
+/** Ist die URL eine redaktionelle Seite (kein Produkt, keine Kategorie)? */
+export function isEditorialUrl(url: string): boolean {
+  try {
+    return MAGAZINE_PATH.test(new URL(url).pathname);
+  } catch {
+    return MAGAZINE_PATH.test(url);
+  }
+}
 
 export interface HreflangMarket {
   domain: string;
@@ -28,10 +43,22 @@ export interface HreflangMarket {
 export interface HreflangHarvestResult {
   /** Ziel-URLs, die per hreflang belegt sind. */
   entries: PoolEntry[];
+  /**
+   * Zweite Ebene: aus den abgerufenen Magazinseiten ausgelesene Links
+   * (Ankertext + Adresse), selbst NICHT abgerufen und daher noch ohne
+   * geprüftes hreflang. Nur Vorrat für eine spätere KI-Auswahl.
+   */
+  discovered: PoolEntry[];
   /** Aus URL-Paaren abgeleitete Pfadübersetzung (DE-Segment → Zielsegment). */
   derivedPathMap: Record<string, string>;
   /** Protokoll je geprüftem Content-Link. */
-  checked: { de_url: string; status: number; target_url: string | null }[];
+  checked: {
+    de_url: string;
+    status: number;
+    target_url: string | null;
+    page_type: "magazine" | "shop";
+    discovered: number;
+  }[];
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -118,19 +145,29 @@ export async function harvestHreflangEquivalents(
   opts: { limit?: number; delayMs?: number } = {},
 ): Promise<HreflangHarvestResult> {
   const limit = opts.limit ?? HREFLANG_FETCH_BUDGET;
-  const delay = opts.delayMs ?? market.crawl_delay_ms ?? 300;
+  const delay = opts.delayMs ?? HREFLANG_FETCH_DELAY_MS;
   const targetHost = hostOf(market.domain);
   const entries: PoolEntry[] = [];
+  const discovered: PoolEntry[] = [];
+  const seenDiscovered = new Set<string>();
   const derivedPathMap: Record<string, string> = {};
   const checked: HreflangHarvestResult["checked"] = [];
 
   for (const link of sourceHtmlOrLinks.slice(0, limit)) {
+    const editorial = isEditorialUrl(link.url);
     const { status, html, finalUrl } = await fetchHtml(link.url);
     if (status !== 200 || !html) {
-      checked.push({ de_url: link.url, status, target_url: null });
+      checked.push({
+        de_url: link.url,
+        status,
+        target_url: null,
+        page_type: editorial ? "magazine" : "shop",
+        discovered: 0,
+      });
       await sleep(delay);
       continue;
     }
+    const pageUrl = finalUrl || link.url;
     const root = parse(html);
     const alternates = root
       .querySelectorAll('link[rel="alternate"][hreflang]')
@@ -138,21 +175,61 @@ export async function harvestHreflangEquivalents(
       .filter((l) => l.lang && l.href);
     const alt = matchHreflang(alternates, market.locale);
     const targetUrl = alt && hostOf(alt.href) === targetHost ? alt.href : null;
-    checked.push({ de_url: finalUrl || link.url, status, target_url: targetUrl });
+    const title = root.querySelector("h1")?.text.replace(/\s+/g, " ").trim() || null;
+    const metaDesc =
+      root.querySelector('meta[name="description"]')?.getAttribute("content")?.trim() || null;
+
     if (targetUrl) {
-      const title =
-        root.querySelector("h1")?.text.replace(/\s+/g, " ").trim() || link.anchor || null;
       entries.push({
         url: targetUrl,
         anchor_text: link.anchor || title,
         path_type: classify(targetUrl, market),
         origin: "hreflang",
-        source_page: finalUrl || link.url,
+        source_page: pageUrl,
+        fetched: true,
+        intent: metaDesc || title,
+        scope: "target",
       });
-      Object.assign(derivedPathMap, derivePathPairs(finalUrl || link.url, targetUrl));
+      Object.assign(derivedPathMap, derivePathPairs(pageUrl, targetUrl));
     }
+
+    // Zweite Ebene: nur aus redaktionellen Seiten, und nur redaktionelle Ziele.
+    let found = 0;
+    if (editorial && isEditorialUrl(pageUrl)) {
+      for (const child of extractContentLinks(html, pageUrl)) {
+        if (!isEditorialUrl(child.url)) continue;
+        if (seenDiscovered.has(child.url)) continue;
+        seenDiscovered.add(child.url);
+        discovered.push({
+          url: child.url,
+          anchor_text: child.anchor || null,
+          path_type: "magazine",
+          origin: "candidate",
+          source_page: pageUrl,
+          fetched: false,
+          intent: null,
+          scope: "source_candidate",
+        });
+        found++;
+      }
+    }
+
+    checked.push({
+      de_url: pageUrl,
+      status,
+      target_url: targetUrl,
+      page_type: editorial ? "magazine" : "shop",
+      discovered: found,
+    });
     await sleep(delay);
   }
 
-  return { entries, derivedPathMap, checked };
+  // Bereits belegte Quellseiten nicht doppelt als Kandidat führen.
+  const usedSources = new Set(checked.map((c) => c.de_url.replace(/\/$/, "")));
+  return {
+    entries,
+    discovered: discovered.filter((d) => !usedSources.has(d.url.replace(/\/$/, ""))),
+    derivedPathMap,
+    checked,
+  };
 }

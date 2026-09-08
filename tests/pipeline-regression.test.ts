@@ -16,7 +16,9 @@ import {
 import {
   derivePathPairs,
   extractContentLinks,
+  isEditorialUrl,
 } from "../src/lib/pipeline/hreflang.server";
+import { isUsable, retrieveFromPool } from "../src/lib/pipeline/pool";
 import { checkLocalizedTable, tableRows } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
 import {
@@ -306,5 +308,38 @@ describe("15 · hreflang-Ernte", () => {
     expect(links.map((l) => l.url)).toEqual([
       "https://www.fressnapf.de/magazin/hund/gesundheit/zahnstein/",
     ]);
+  });
+});
+
+describe("16 · Zweite Ebene des Link-Pools", () => {
+  test("Magazinseiten werden erkannt, Produkt-/Kategorieseiten nicht", () => {
+    expect(isEditorialUrl("https://www.fressnapf.de/magazin/hund/rassen/barbet/")).toBe(true);
+    expect(isEditorialUrl("https://www.fressnapf.de/p/royal-canin-12kg/")).toBe(false);
+    expect(isEditorialUrl("https://www.fressnapf.de/c/hund/trockenfutter/")).toBe(false);
+  });
+
+  test("nicht abgerufene Quellkandidaten sind nicht direkt verwendbar", () => {
+    const target = {
+      url: "https://maxizoo.ie/magazine/dog/health/tartar/",
+      anchor_text: "tartar in dogs",
+      path_type: "magazine" as const,
+      origin: "hreflang" as const,
+      source_page: "x",
+      fetched: true,
+      scope: "target" as const,
+    };
+    const candidate = {
+      url: "https://www.fressnapf.de/magazin/hund/gesundheit/zahnstein/",
+      anchor_text: "Zahnstein beim Hund",
+      path_type: "magazine" as const,
+      origin: "candidate" as const,
+      source_page: "y",
+      fetched: false,
+      scope: "source_candidate" as const,
+    };
+    expect(isUsable(target)).toBe(true);
+    expect(isUsable(candidate)).toBe(false);
+    const hits = retrieveFromPool("zahnstein hund", [target, candidate]);
+    expect(hits.some((h) => h.url === candidate.url)).toBe(false);
   });
 });
