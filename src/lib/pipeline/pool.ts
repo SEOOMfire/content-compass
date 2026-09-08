@@ -149,7 +149,7 @@ export function matchHubEntry(
   term: string,
   slugCandidates: string[] = [],
 ): { entry: PoolEntry; score: number } | null {
-  const hub = entries.filter((e) => e.origin === "hub");
+  const hub = entries.filter((e) => e.origin === "hub" && isUsable(e));
   if (!hub.length) return null;
   const wanted = [term, ...slugCandidates].filter(Boolean).map(norm);
   let best: { entry: PoolEntry; score: number } | null = null;
