@@ -257,6 +257,7 @@ export async function runStep(
           harvest = {
             checked: res.checked,
             entries: res.entries,
+            discovered: res.discovered,
             derived_path_map: res.derivedPathMap,
             harvested_at: new Date().toISOString(),
           };
@@ -265,8 +266,9 @@ export async function runStep(
         evidence.push({
           step: "hreflang_pool",
           detail:
-            `${harvest.checked.length} im Content verlinkte Quellartikel geprüft, ` +
-            `${harvest.entries.length} hreflang-Äquivalente im Zielmarkt gefunden` +
+            `${harvest.checked.length} im Content verlinkte Nachbarseiten abgerufen, ` +
+            `${harvest.entries.length} hreflang-Äquivalente im Zielmarkt gefunden, ` +
+            `${harvest.discovered?.length ?? 0} weitere Quellkandidaten (nicht abgerufen) erfasst` +
             (Object.keys(harvest.derived_path_map).length
               ? `; abgeleitete Pfade: ${Object.entries(harvest.derived_path_map)
                   .map(([k, v]) => `${k}→${v}`)
