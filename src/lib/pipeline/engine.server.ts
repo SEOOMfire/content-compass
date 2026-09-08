@@ -390,6 +390,7 @@ export async function runStep(
         harvest = {
           checked: res.checked,
           entries: res.entries,
+          discovered: res.discovered,
           derived_path_map: res.derivedPathMap,
           harvested_at: new Date().toISOString(),
         };
@@ -401,6 +402,14 @@ export async function runStep(
         if (!known.has(e.url)) {
           known.add(e.url);
           pool.entries.unshift(e);
+        }
+      }
+      // Zweite Ebene: nicht abgerufene Quellkandidaten – werden mitgeführt und
+      // gespeichert, sind aber (scope = source_candidate) nicht direkt nutzbar.
+      for (const e of harvest.discovered ?? []) {
+        if (!known.has(e.url)) {
+          known.add(e.url);
+          pool.entries.push(e);
         }
       }
       if (!pool.entries.length) {
