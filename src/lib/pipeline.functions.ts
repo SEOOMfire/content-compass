@@ -221,3 +221,51 @@ export const assignRole = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+export const inviteUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        email: z.string().email(),
+        role: z.enum(["admin", "editor", "viewer"]).default("admin"),
+        redirectTo: z.string().url(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertRole(context.supabase as never, context.userId, "admin");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const email = data.email.trim().toLowerCase();
+
+    let userId: string | null = null;
+    let link: string | null = null;
+    let emailSent = false;
+
+    const invited = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: data.redirectTo,
+    });
+    if (invited.data?.user) {
+      userId = invited.data.user.id;
+      emailSent = true;
+    }
+
+    if (!userId) {
+      const gen = await supabaseAdmin.auth.admin.generateLink({
+        type: "invite",
+        email,
+        options: { redirectTo: data.redirectTo },
+      });
+      if (gen.error || !gen.data?.user) {
+        throw new Error(gen.error?.message ?? invited.error?.message ?? "Einladung fehlgeschlagen.");
+      }
+      userId = gen.data.user.id;
+      link = gen.data.properties?.action_link ?? null;
+    }
+
+    await supabaseAdmin
+      .from("user_roles")
+      .upsert({ user_id: userId, role: data.role }, { onConflict: "user_id,role" });
+
+    return { userId, email, emailSent, link };
+  });

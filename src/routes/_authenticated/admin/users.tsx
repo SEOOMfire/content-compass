@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { assignRole } from "@/lib/pipeline.functions";
+import { assignRole, inviteUser } from "@/lib/pipeline.functions";
 import { ROLE_LABELS, type AppRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
@@ -53,8 +56,59 @@ function UsersPage() {
     }
   }
 
+  const [email, setEmail] = useState("");
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function invite() {
+    if (!email.trim()) return;
+    setBusy(true);
+    setInviteLink(null);
+    try {
+      const res = await inviteUser({
+        data: { email, role: "admin", redirectTo: `${window.location.origin}/auth` },
+      });
+      if (res.emailSent) toast.success(`Einladung an ${res.email} verschickt`);
+      else {
+        setInviteLink(res.link);
+        toast.success("Einladungslink erstellt – bitte manuell weitergeben");
+      }
+      setEmail("");
+      await qc.invalidateQueries({ queryKey: ["users-roles"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Einladung fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Card className="border-border bg-surface">
+    <div className="space-y-4">
+      <Card className="border-border bg-surface">
+        <CardHeader>
+          <CardTitle className="text-base">Admin einladen</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="email"
+              placeholder="name@omfire.de"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="max-w-xs"
+            />
+            <Button onClick={invite} disabled={busy}>
+              {busy ? "Sende…" : "Als Admin einladen"}
+            </Button>
+          </div>
+          {inviteLink && (
+            <p className="break-all rounded-md bg-muted p-2 text-xs">{inviteLink}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border bg-surface">
+
       <CardHeader>
         <CardTitle className="text-base">Nutzer</CardTitle>
       </CardHeader>
@@ -88,6 +142,8 @@ function UsersPage() {
           </p>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
+
 }
