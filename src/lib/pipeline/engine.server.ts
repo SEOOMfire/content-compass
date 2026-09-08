@@ -450,6 +450,8 @@ export async function runStep(
           fetches: pool.fetches,
           hreflang_pool: harvest.entries.length,
           hreflang_checked: harvest.checked.length,
+          nachbarseiten_abgerufen: harvest.checked.length,
+          quellkandidaten_nicht_abgerufen: harvest.discovered?.length ?? 0,
           derived_path_map: derivedMap,
           entries: pool.entries.length,
           siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
