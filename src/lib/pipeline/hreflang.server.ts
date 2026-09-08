@@ -43,10 +43,22 @@ export interface HreflangMarket {
 export interface HreflangHarvestResult {
   /** Ziel-URLs, die per hreflang belegt sind. */
   entries: PoolEntry[];
+  /**
+   * Zweite Ebene: aus den abgerufenen Magazinseiten ausgelesene Links
+   * (Ankertext + Adresse), selbst NICHT abgerufen und daher noch ohne
+   * geprüftes hreflang. Nur Vorrat für eine spätere KI-Auswahl.
+   */
+  discovered: PoolEntry[];
   /** Aus URL-Paaren abgeleitete Pfadübersetzung (DE-Segment → Zielsegment). */
   derivedPathMap: Record<string, string>;
   /** Protokoll je geprüftem Content-Link. */
-  checked: { de_url: string; status: number; target_url: string | null }[];
+  checked: {
+    de_url: string;
+    status: number;
+    target_url: string | null;
+    page_type: "magazine" | "shop";
+    discovered: number;
+  }[];
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
