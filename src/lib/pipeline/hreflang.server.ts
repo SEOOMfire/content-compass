@@ -15,7 +15,22 @@ import { fetchHtml } from "./extract.server";
 import { matchHreflang, pathSegments } from "./paths";
 import type { PoolEntry, PoolPathType } from "./pool";
 
-export const HREFLANG_FETCH_BUDGET = 12;
+/** Bis zu 20 im Fließtext verlinkte Nachbarseiten werden abgerufen. */
+export const HREFLANG_FETCH_BUDGET = 20;
+/** Mindestabstand zwischen zwei Abrufen, um die Quellseite nicht zu belasten. */
+export const HREFLANG_FETCH_DELAY_MS = 1000;
+
+const MAGAZINE_PATH =
+  /\/(magazin|magazine|magazyn|ratgeber|blog|guide|conseils|poradnik|advice)(\/|$)/i;
+
+/** Ist die URL eine redaktionelle Seite (kein Produkt, keine Kategorie)? */
+export function isEditorialUrl(url: string): boolean {
+  try {
+    return MAGAZINE_PATH.test(new URL(url).pathname);
+  } catch {
+    return MAGAZINE_PATH.test(url);
+  }
+}
 
 export interface HreflangMarket {
   domain: string;
