@@ -1072,6 +1072,14 @@ export async function runStep(
 
       for (const input of inputs) {
         if (input.action === "streichen") continue;
+        const hashes = "#".repeat(input.heading_level);
+        // Inhaltsverzeichnis: nur Platzhalter, keine KI-Erstellung (#4).
+        if (input.is_toc) {
+          const placeholder = `${hashes} ${input.target_heading}\n\n[INHALTSVERZEICHNIS – Platzhalter]`;
+          written.push(input.target_heading);
+          content.push({ heading: input.target_heading, markdown: placeholder });
+          continue;
+        }
         const previousContent = content.length
           ? content.map((c) => c.markdown).join("\n\n")
           : "(noch kein Abschnitt geschrieben – dies ist der erste Abschnitt)";
