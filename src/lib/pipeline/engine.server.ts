@@ -6,7 +6,7 @@ import {
   type PlanSection,
   type TargetStatus,
 } from "./types";
-import { extractPage, verifyUrl } from "./extract.server";
+import { extractPage, verifyAndExtract, verifyUrl } from "./extract.server";
 import {
   runPrompt,
   startVarRecording,
