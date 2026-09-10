@@ -1276,6 +1276,13 @@ function describeStepInput(
         source_url: ctx.source?.url ?? null,
         hub_candidates: ctx.linkPool?.hub_url ?? null,
       };
+    case "S7b_serp_gap":
+      return {
+        market: marketInfo,
+        topic: ctx.source?.h1 ?? ctx.source?.title ?? null,
+        pool_size: ctx.linkPool?.entries.length ?? 0,
+        content_links: ctx.source?.contentLinks?.length ?? 0,
+      };
     case "S5_style_profile":
       return {
         market: marketInfo,
