@@ -60,6 +60,14 @@ export const exportJobReport = createServerFn({ method: "POST" })
     return await buildJobReport(data.jobId);
   });
 
+export const exportPromptVars = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { buildPromptVarsReport } = await import("@/lib/pipeline/prompt-vars.server");
+    return await buildPromptVarsReport(data.jobId);
+  });
+
 export const runFromStepFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
