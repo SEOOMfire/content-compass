@@ -254,6 +254,8 @@ Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. A
 <aktion>{{action}}</aktion>
 <lokalisierungshinweise>{{localization_notes}}</lokalisierungshinweise>
 <bereits_geschriebene_ueberschriften>{{written_headings}}</bereits_geschriebene_ueberschriften>
+<bereits_geschriebener_artikel>{{previous_content}}</bereits_geschriebener_artikel>
+<bereits_gesetzte_links>{{used_links}}</bereits_gesetzte_links>
 <geprüfte_links>{{verified_links}}</geprüfte_links>
 <tabelle>{{table_markdown}}</tabelle>
 <institutionen_im_zielmarkt>{{institutions}}</institutionen_im_zielmarkt>
