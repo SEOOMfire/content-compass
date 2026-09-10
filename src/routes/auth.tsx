@@ -26,9 +26,13 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
 
   useEffect(() => {
+    if (window.location.hash.includes("type=recovery")) {
+      navigate({ to: "/reset-password", replace: true });
+      return;
+    }
     supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => {
       if (data.session) navigate({ to: "/jobs", replace: true });
     });
@@ -38,6 +42,15 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+        toast.success("E-Mail zum Zurücksetzen verschickt (bitte auch Spam prüfen).");
+        setMode("login");
+        return;
+      }
       if (mode === "signup") {
         const { error } = await supabase.auth.signUp({
           email,
@@ -60,13 +73,16 @@ function AuthPage() {
     }
   }
 
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm border-border bg-surface shadow-sm">
         <CardHeader className="items-center gap-3 pb-2 text-center">
           <img src={logoUrl} alt="OMfire!" className="h-10 w-auto" />
-          <p className="text-sm text-muted-foreground">Content-Lokalisierung · Bitte anmelden</p>
+          <p className="text-sm text-muted-foreground">
+            {mode === "forgot"
+              ? "Passwort zurücksetzen"
+              : "Content-Lokalisierung · Bitte anmelden"}
+          </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-3">
@@ -81,21 +97,38 @@ function AuthPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Passwort</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            {mode !== "forgot" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Passwort</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "…" : mode === "login" ? "Anmelden" : "Konto anlegen"}
+              {loading
+                ? "…"
+                : mode === "login"
+                  ? "Anmelden"
+                  : mode === "signup"
+                    ? "Konto anlegen"
+                    : "Link zum Zurücksetzen senden"}
             </Button>
+            {mode === "login" && (
+              <button
+                type="button"
+                className="w-full text-xs text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setMode("forgot")}
+              >
+                Passwort vergessen?
+              </button>
+            )}
             <button
               type="button"
               className="w-full text-xs text-muted-foreground underline-offset-2 hover:underline"
@@ -103,7 +136,6 @@ function AuthPage() {
             >
               {mode === "login" ? "Neues internes Konto anlegen" : "Zurück zur Anmeldung"}
             </button>
-
           </form>
         </CardContent>
       </Card>
