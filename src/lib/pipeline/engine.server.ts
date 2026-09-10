@@ -1032,6 +1032,13 @@ export async function runStep(
       const linkUsage = new Map<string, string[]>();
       const allLinks = ctx.verifiedLinks ?? [];
 
+      const linkMeta = (l: (typeof allLinks)[number]) => {
+        const parts: string[] = [];
+        if (l.page_type) parts.push(`Seitentyp: ${l.page_type}`);
+        if (l.summary) parts.push(`Inhalt: ${l.summary}`);
+        return parts.length ? `\n  ${parts.join(" | ")}` : "";
+      };
+
       const availableLinks = () =>
         allLinks
           .filter((l) => (linkUsage.get(l.target_url)?.length ?? 0) < 2)
