@@ -476,6 +476,204 @@ export async function runStep(
       };
     }
 
+    case "S7b_serp_gap": {
+      const source = requireSource(ctx);
+      const poolEntries: PoolEntry[] = [...(ctx.linkPool?.entries ?? [])];
+      if (!poolEntries.length) {
+        throw new Error("Kein Link-Pool vorhanden – bitte zuerst S7a ausführen.");
+      }
+      const { credentialsPresent, runSerpQueries, marketHost, SERP_MAX_QUERIES } = await import(
+        "./serp.server"
+      );
+      if (!credentialsPresent()) {
+        throw new Error(
+          "DataForSEO ist nicht konfiguriert (DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD fehlen).",
+        );
+      }
+      const serpMarket = {
+        domain: market.domain,
+        locale: market.locale,
+        language: market.language,
+        country: market.country,
+      };
+      const host = marketHost(serpMarket);
+      const topic = source.h1 ?? source.title ?? job.source_url;
+      const knownUrls = new Set(poolEntries.map((e) => e.url.replace(/\/$/, "")));
+
+      // 1 · KI formuliert die Suchanfragen anhand der bestehenden Poollücken.
+      const tplQ = await loadTemplate("serp_gap_queries");
+      const resQ = await runPrompt<unknown>(tplQ, {
+        country: market.country,
+        language: market.language,
+        host,
+        topic,
+        max_queries: String(SERP_MAX_QUERIES),
+        de_outline: source.outline.slice(0, 3000),
+        de_content_links: (source.contentLinks ?? [])
+          .slice(0, 40)
+          .map((l) => `- ${l.anchor} → ${l.url}`)
+          .join("\n"),
+        pool_urls: poolEntries
+          .filter(isUsable)
+          .slice(0, 80)
+          .map((e) => `- ${e.anchor_text ?? ""} → ${e.url}`)
+          .join("\n"),
+      });
+      const rawQueries = ((): string[] => {
+        const d = resQ.data as { queries?: unknown } | unknown[];
+        const arr = Array.isArray(d) ? d : Array.isArray((d as { queries?: unknown })?.queries)
+          ? ((d as { queries: unknown[] }).queries)
+          : [];
+        return arr
+          .map((q) => (typeof q === "string" ? q : ((q as { query?: string })?.query ?? "")))
+          .map((q) => q.trim())
+          .filter(Boolean);
+      })();
+      const queries = [...new Set(rawQueries)].slice(0, SERP_MAX_QUERIES);
+      if (!queries.length) throw new Error("Die KI hat keine Suchanfragen geliefert.");
+
+      // 2 · DataForSEO (nur 1. Ergebnisseite, hartes 5-Minuten-Budget).
+      const serp = await runSerpQueries(queries, serpMarket);
+      const seen = new Set<string>();
+      const items = serp.results
+        .flatMap((r) => r.items)
+        .filter((i) => {
+          const key = i.url.replace(/\/$/, "");
+          if (seen.has(key) || knownUrls.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 40);
+
+      const resultLog = serp.results.map((r) => ({
+        query: r.query,
+        keyword: r.keyword,
+        status: r.status,
+        hits: r.items.length,
+        ...(r.error ? { error: r.error } : {}),
+      }));
+
+      const added: { url: string; anchor_text: string | null; intent: string | null }[] = [];
+      const rejected: { url: string; reason: string }[] = [];
+      let selectSnapshot = "";
+      let selModel: string | undefined;
+      let tokensIn = resQ.tokensIn;
+      let tokensOut = resQ.tokensOut;
+
+      if (items.length) {
+        // 3 · KI wählt aus den SERP-Treffern nur die potentiell nützlichen aus.
+        const tplS = await loadTemplate("serp_gap_select");
+        const resS = await runPrompt<unknown>(tplS, {
+          country: market.country,
+          language: market.language,
+          host,
+          topic,
+          serp_results: items
+            .map(
+              (i, n) =>
+                `${n + 1}. ${i.title ?? "(ohne Titel)"}\n   ${i.url}\n   ${i.description ?? ""}`,
+            )
+            .join("\n"),
+        });
+        selectSnapshot = resS.promptSnapshot;
+        selModel = resS.model;
+        tokensIn += resS.tokensIn;
+        tokensOut += resS.tokensOut;
+        const chosen = ((): { url: string; anchor_text: string | null; intent: string | null }[] => {
+          const d = resS.data as { selected?: unknown } | unknown[];
+          const arr = Array.isArray(d)
+            ? d
+            : Array.isArray((d as { selected?: unknown })?.selected)
+              ? ((d as { selected: unknown[] }).selected)
+              : [];
+          return arr
+            .map((s) => {
+              const o = s as { url?: string; index?: number; anchor_text?: string; intent?: string };
+              const byIndex =
+                typeof o.index === "number" && o.index >= 1 && o.index <= items.length
+                  ? items[o.index - 1]
+                  : undefined;
+              const url = o.url ?? byIndex?.url ?? "";
+              const match = items.find((i) => i.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
+              if (!match) return null;
+              return {
+                url: match.url,
+                anchor_text: o.anchor_text ?? match.title ?? null,
+                intent: o.intent ?? match.description ?? null,
+              };
+            })
+            .filter(Boolean) as { url: string; anchor_text: string | null; intent: string | null }[];
+        })();
+
+        // 4 · Kurze technische Prüfung, bevor etwas in den Pool wandert.
+        for (const c of chosen) {
+          const v = await verifyUrl(c.url);
+          if (!v.ok) {
+            rejected.push({ url: c.url, reason: v.reason ?? `HTTP ${v.http_status}` });
+            continue;
+          }
+          added.push(c);
+          const entry: PoolEntry = {
+            url: c.url,
+            anchor_text: c.anchor_text,
+            path_type: isMagazineUrl(c.url, market) ? "magazine" : "other",
+            origin: "serp",
+            source_page: `serp:${host}`,
+            fetched: true,
+            intent: c.intent,
+            scope: "target",
+          };
+          poolEntries.push(entry);
+          await supabaseAdmin.from("link_pool").upsert(
+            {
+              market_id: market.id,
+              content_type: "magazine",
+              source_page: entry.source_page,
+              url: entry.url,
+              anchor_text: entry.anchor_text,
+              path_type: entry.path_type,
+              origin: entry.origin,
+              fetched: true,
+              intent: entry.intent,
+              scope: "target",
+              http_status: v.http_status,
+              fetched_at: new Date().toISOString(),
+            } as never,
+            { onConflict: "market_id,content_type,url" },
+          );
+        }
+      }
+
+      const serpGap = {
+        ran_at: new Date().toISOString(),
+        queries,
+        location_code: serp.location_code,
+        language_code: serp.language_code,
+        host,
+        results: resultLog,
+        added,
+        rejected,
+      };
+
+      return {
+        output: {
+          ...serpGap,
+          serp_hits: items.length,
+          pool_size: poolEntries.length,
+        },
+        context: {
+          serpGap,
+          ...(ctx.linkPool ? { linkPool: { ...ctx.linkPool, entries: poolEntries } } : {}),
+        },
+        model: selModel ?? resQ.model,
+        promptSnapshot: [resQ.promptSnapshot, selectSnapshot].filter(Boolean).join("\n\n=====\n\n"),
+        tokensIn,
+        tokensOut,
+      };
+    }
+
+
+
     case "S5_style_profile": {
       const { data: cached } = await supabaseAdmin
         .from("style_profiles")
