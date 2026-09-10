@@ -14,7 +14,6 @@ import {
   type PromptTemplateRow,
 } from "./ai.server";
 import {
-  buildGapReport,
   isUsable,
   matchHubEntry,
   retrieveFromPool,
@@ -1072,6 +1071,14 @@ export async function runStep(
 
       for (const input of inputs) {
         if (input.action === "streichen") continue;
+        const hashes = "#".repeat(input.heading_level);
+        // Inhaltsverzeichnis: nur Platzhalter, keine KI-Erstellung (#4).
+        if (input.is_toc) {
+          const placeholder = `${hashes} ${input.target_heading}\n\n[INHALTSVERZEICHNIS – Platzhalter]`;
+          written.push(input.target_heading);
+          content.push({ heading: input.target_heading, markdown: placeholder });
+          continue;
+        }
         const previousContent = content.length
           ? content.map((c) => c.markdown).join("\n\n")
           : "(noch kein Abschnitt geschrieben – dies ist der erste Abschnitt)";
@@ -1086,8 +1093,10 @@ export async function runStep(
           address_form: market.address_form ?? "",
           style_profile: input.style_profile,
           style_example: "",
-          de_section: `## ${input.de_heading}\n${input.de_body}`,
+          de_section: `${hashes} ${input.de_heading}\n${input.de_body}`,
           target_heading: input.target_heading,
+          heading_level: input.heading_level,
+          heading_markup: `${hashes} ${input.target_heading}`,
           action: input.action,
           localization_notes: input.notes.join("\n- "),
           written_headings: written.join(", "),
@@ -1099,9 +1108,10 @@ export async function runStep(
         snapshots.push(res.promptSnapshot);
         tokensIn += res.tokensIn;
         tokensOut += res.tokensOut;
-        const md = typeof res.data === "string" ? res.data : String(res.data);
+        const raw = typeof res.data === "string" ? res.data : String(res.data);
+        const md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
         written.push(input.target_heading);
-        content.push({ heading: input.target_heading, markdown: md.trim() });
+        content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
@@ -1139,14 +1149,14 @@ export async function runStep(
 
     case "S13_export": {
       const source = requireSource(ctx);
-      const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
-      const gaps = buildGapReport(anchors, ctx.verifiedLinks ?? [], ctx.linkSearchLog ?? []);
       const broken = ctx.brokenLinks ?? [];
       const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
       const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
       const readingMinutes = Math.max(1, Math.round(targetWords / 200));
+      // H1 nur ergänzen, wenn der Content selbst keine H1 enthält (#3).
+      const hasH1 = /^#\s+\S/m.test(bodyText);
       const md = [
-        `# ${headline(ctx.slug?.term_translated ?? source.h1 ?? "")}`,
+        hasH1 ? "" : `# ${headline(ctx.slug?.term_translated ?? source.h1 ?? "")}`,
         "",
         `> Quelle: ${source.url}`,
         `> Wortzahl (Ziel): ${targetWords} · Lesezeit: ${readingMinutes} Min.`,
@@ -1165,18 +1175,8 @@ export async function runStep(
           (l) => `- [${l.anchor}](${l.target_url}) — HTTP ${l.http_status}`,
         ),
         "",
-        "## Gap-Report",
-        gaps.length
-          ? gaps
-              .map(
-                (g) =>
-                  `- **${g.anchor}** — ${g.reason}. Suchbegriffe: ${g.search_terms.join(", ") || "–"}. ` +
-                  `Site-Suche: ${g.stage2_run ? "ausgeführt" : "nicht ausgeführt"}.`,
-              )
-              .join("\n")
-          : "- Keine offenen Anker: jeder geplante Anker hat einen verifizierten Link.",
         broken.length
-          ? `\n### Verworfene Poolkandidaten\n${broken
+          ? `## Verworfene Poolkandidaten\n${broken
               .map((b) => `- ${b.anchor}: ${b.url} — ${b.reason}`)
               .join("\n")}`
           : "",
@@ -1185,14 +1185,29 @@ export async function runStep(
         .filter((l) => l !== "")
         .join("\n");
       return {
-        output: { length: md.length, gaps: gaps.length, broken: broken.length },
-        context: { exportMarkdown: md, gapReport: gaps },
+        output: { length: md.length, broken: broken.length },
+        context: { exportMarkdown: md },
       };
     }
 
     default:
       throw new Error(`Unbekannter Schritt: ${stepKey}`);
   }
+}
+
+/**
+ * Erzwingt die Überschriftenebene aus dem Quelldokument (#3):
+ * Die erste Überschrift im Abschnitt bekommt exakt so viele Rauten wie die
+ * deutsche Vorlage; fehlt sie, wird sie ergänzt.
+ */
+export function enforceHeadingLevel(md: string, level: number, heading: string): string {
+  const hashes = "#".repeat(Math.min(3, Math.max(1, level)));
+  const lines = md.split("\n");
+  const idx = lines.findIndex((l) => /^\s*#{1,6}\s+\S/.test(l));
+  if (idx === -1) return `${hashes} ${heading}\n\n${md}`.trim();
+  const text = (lines[idx] ?? "").replace(/^\s*#{1,6}\s+/, "").trim();
+  lines[idx] = `${hashes} ${text}`;
+  return lines.join("\n");
 }
 
 /** H1 nie als Slug ausgeben: Bindestriche auflösen, ersten Buchstaben groß. */

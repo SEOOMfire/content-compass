@@ -157,7 +157,7 @@ Gefiltert wird zunächst auf den gewünschten Seitentyp; findet sich nichts, wir
 
 **Stufe 2 — gezielte Site-Suche.** Nur wenn kein Treffer existiert oder der beste unter 0,6 liegt, und solange das Budget von 10 Anfragen reicht. Bevorzugt wird die interne Suche des Markts (`search_url_pattern` mit `{q}`); daraus werden bis zu 8 Ergebnisse übernommen, die nicht `other` sind. Alternativ, falls konfiguriert, eine `site:`-Websuche. Neue Treffer wandern in den Pool und die Suche wird wiederholt.
 
-Jede Anfrage wird protokolliert (`search_log`: Anker, Suchbegriffe, ob Stufe 2 lief, Quelle, Trefferzahl) — daraus entsteht später der Gap-Report.
+Jede Anfrage wird protokolliert (`search_log`: Anker, Suchbegriffe, ob Stufe 2 lief, Quelle, Trefferzahl).
 
 ---
 
@@ -183,6 +183,10 @@ Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministis
 
 ## S11 · Content erzeugen
 
+**Überschriftenebenen.** Jeder Abschnitt übernimmt die Ebene (H1/H2/H3) des zugehörigen deutschen Quellabschnitts; die Ebene wird nach der Erzeugung erzwungen, falls das Modell abweicht.
+
+**Inhaltsverzeichnis.** Abschnitte, deren deutsche Überschrift ein Inhaltsverzeichnis ist (z. B. „Inhaltsverzeichnis", „Das erwartet dich", „Auf einen Blick"), werden nicht von der KI geschrieben. Es entsteht nur die Überschrift plus die Zeile `[INHALTSVERZEICHNIS – Platzhalter]`.
+
 **Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **nur** an Abschnitte mit Tabellenkennzeichen vergeben, in Originalreihenfolge.
 
 **Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, der **komplette bisher geschriebene Artikel** (`previous_content`), die Liste der noch verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), gegebenenfalls die lokalisierte Tabelle, sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen.
@@ -205,11 +209,10 @@ Der gesamte erzeugte Text wird mit Prompt `qa` geprüft, zusammen mit Sprache, L
 
 Erzeugt das fertige Markdown ohne weiteren KI-Aufruf:
 
-* H1 aus dem übersetzten Begriff, **nie als Slug** (Bindestriche aufgelöst, erster Buchstabe groß),
+* H1 aus dem übersetzten Begriff, **nie als Slug** (Bindestriche aufgelöst, erster Buchstabe groß) — sie entfällt, wenn der Text bereits eine eigene H1 enthält,
 * Kopfzeilen: Quelle, Wortzahl des Zieltexts und daraus berechnete **Lesezeit** (200 Wörter/Minute, mindestens 1), Zielstatus, Zielermittlung, hreflang-Hinweis, Umfang des Link-Pools,
-* alle Abschnitte in Planreihenfolge,
+* alle Abschnitte in Planreihenfolge, jede Überschrift in genau der Ebene (H1/H2/H3) des deutschen Originalabschnitts,
 * Liste der verifizierten Links mit HTTP-Status,
-* **Gap-Report:** jeder geplante Anker ohne verifizierten Link mit Begründung — „nicht gesucht", „keine Poolkandidaten, Site-Suche nicht ausgelöst", „im Zielmarkt nicht gefunden (Pool + Site-Suche)" oder „Kandidaten gefunden, aber keiner bestand die HTTP-Prüfung",
 * Liste der verworfenen Poolkandidaten,
 * Abschlusshinweis des Markts, falls gepflegt.
 

@@ -283,7 +283,9 @@ MARKEN- UND SERVICE-AUSSAGEN:
   Verfügbarkeiten: keine Übernahme deutscher Gegebenheiten ohne Bestätigung.
 
 ÜBERSCHRIFTEN UND META:
-- Verwende exakt die vorgegebene <ziel_ueberschrift> als H2, aber in korrekter
+- Die erste Zeile des Outputs ist die Überschrift, exakt in dieser Form: {{heading_markup}}
+  (Ebene H{{heading_level}} – genau so viele Rauten, niemals eine andere Ebene).
+  Verwende exakt die vorgegebene <ziel_ueberschrift>, aber in korrekter
   Groß-/Kleinschreibung der Zielsprache. Nie komplett kleingeschrieben, nie ein Slug.
 - Übernimm keine Meta-Zeilen aus dem Original (Datum, Lesezeit, Autor). Falls der Abschnitt
   eine Lesezeit enthalten muss, berechne sie aus der tatsächlichen Wortzahl deines
