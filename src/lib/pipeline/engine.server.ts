@@ -1109,9 +1109,10 @@ export async function runStep(
         snapshots.push(res.promptSnapshot);
         tokensIn += res.tokensIn;
         tokensOut += res.tokensOut;
-        const md = typeof res.data === "string" ? res.data : String(res.data);
+        const raw = typeof res.data === "string" ? res.data : String(res.data);
+        const md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
         written.push(input.target_heading);
-        content.push({ heading: input.target_heading, markdown: md.trim() });
+        content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
