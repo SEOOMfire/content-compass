@@ -141,6 +141,33 @@ export async function extractPage(url: string): Promise<SourceDoc> {
   return extractDoc(url, finalUrl, status, html);
 }
 
+/**
+ * Ein einziger Abruf: prüft die URL (200, Canonical, Soft-404) UND liefert bei
+ * Erfolg den extrahierten Seiteninhalt für die Zusammenfassung (S9).
+ */
+export async function verifyAndExtract(
+  url: string,
+): Promise<{ verification: UrlVerification; doc: SourceDoc | null }> {
+  try {
+    const { status, finalUrl, html } = await fetchHtml(url);
+    const verification = verifyHtml(url, finalUrl, status, html);
+    const doc = status === 200 ? extractDoc(url, finalUrl, status, html) : null;
+    return { verification, doc };
+  } catch (err) {
+    return {
+      verification: {
+        url,
+        ok: false,
+        http_status: 0,
+        canonical_ok: false,
+        soft404: false,
+        reason: err instanceof Error ? err.message : "Fehler",
+      },
+      doc: null,
+    };
+  }
+}
+
 function normalizeUrl(u: string): string {
   try {
     const p = new URL(u);
