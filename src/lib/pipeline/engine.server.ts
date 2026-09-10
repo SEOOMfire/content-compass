@@ -1176,18 +1176,8 @@ export async function runStep(
           (l) => `- [${l.anchor}](${l.target_url}) — HTTP ${l.http_status}`,
         ),
         "",
-        "## Gap-Report",
-        gaps.length
-          ? gaps
-              .map(
-                (g) =>
-                  `- **${g.anchor}** — ${g.reason}. Suchbegriffe: ${g.search_terms.join(", ") || "–"}. ` +
-                  `Site-Suche: ${g.stage2_run ? "ausgeführt" : "nicht ausgeführt"}.`,
-              )
-              .join("\n")
-          : "- Keine offenen Anker: jeder geplante Anker hat einen verifizierten Link.",
         broken.length
-          ? `\n### Verworfene Poolkandidaten\n${broken
+          ? `## Verworfene Poolkandidaten\n${broken
               .map((b) => `- ${b.anchor}: ${b.url} — ${b.reason}`)
               .join("\n")}`
           : "",
