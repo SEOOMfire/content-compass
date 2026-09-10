@@ -943,10 +943,12 @@ export async function executeStep(jobId: string, stepKey: string) {
       tokens_out: result.tokensOut ?? 0,
       ...(result.model ? { model: result.model } : {}),
       ...(result.promptSnapshot ? { prompt_snapshot: result.promptSnapshot } : {}),
+      prompt_vars: (recordedVars.length ? recordedVars : null) as never,
     });
     await syncJobStatus(jobId);
     return { ok: true as const, output: result.output };
   } catch (err) {
+    collectRecordedVars();
     const message = err instanceof Error ? err.message : "Unbekannter Fehler";
     await upsertStep(jobId, def.key, def.order, {
       status: "error",
