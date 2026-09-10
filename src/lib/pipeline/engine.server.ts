@@ -978,12 +978,47 @@ export async function runStep(
       const snapshots: string[] = [];
       let tokensIn = 0;
       let tokensOut = 0;
-      const linksForPrompt = (ctx.verifiedLinks ?? [])
-        .map((l) => `- [${l.anchor}](${l.target_url})`)
-        .join("\n");
+
+      // Linkbudget: jede Ziel-URL höchstens 2x, zweiter Einsatz nur mit anderem Ankertext.
+      const linkUsage = new Map<string, string[]>();
+      const allLinks = ctx.verifiedLinks ?? [];
+
+      const availableLinks = () =>
+        allLinks
+          .filter((l) => (linkUsage.get(l.target_url)?.length ?? 0) < 2)
+          .map((l) => {
+            const used = linkUsage.get(l.target_url) ?? [];
+            return used.length
+              ? `- [${l.anchor}](${l.target_url}) — ACHTUNG: bereits 1x verlinkt (Ankertext: „${used.join("“, „")}“). Nur erneut verlinken, wenn der neue Ankertext komplett anders lautet und der Link inhaltlich wirklich nötig ist.`
+              : `- [${l.anchor}](${l.target_url})`;
+          })
+          .join("\n");
+
+      const usedLinksForPrompt = () => {
+        const rows = [...linkUsage.entries()].map(
+          ([url, anchors]) => `- ${url} — bereits ${anchors.length}x verlinkt als „${anchors.join("“, „")}“`,
+        );
+        return rows.length ? rows.join("\n") : "(noch keine Links gesetzt)";
+      };
+
+      const trackLinks = (markdown: string) => {
+        for (const l of allLinks) {
+          const escaped = l.target_url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp(`\\[([^\\]]{1,200})\\]\\(\\s*${escaped}[^)]*\\)`, "g");
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(markdown)) !== null) {
+            const list = linkUsage.get(l.target_url) ?? [];
+            list.push(m[1] ?? "");
+            linkUsage.set(l.target_url, list);
+          }
+        }
+      };
 
       for (const input of inputs) {
         if (input.action === "streichen") continue;
+        const previousContent = content.length
+          ? content.map((c) => c.markdown).join("\n\n")
+          : "(noch kein Abschnitt geschrieben – dies ist der erste Abschnitt)";
         // Vollständiges Objekt an das Modell – ungekürzt (P0-1).
         const res = await runPrompt<string>(tpl, {
           language: market.language,
@@ -1000,7 +1035,9 @@ export async function runStep(
           action: input.action,
           localization_notes: input.notes.join("\n- "),
           written_headings: written.join(", "),
-          verified_links: linksForPrompt,
+          verified_links: availableLinks(),
+          used_links: usedLinksForPrompt(),
+          previous_content: previousContent,
           table_markdown: input.table_markdown ?? "",
         });
         snapshots.push(res.promptSnapshot);
@@ -1009,6 +1046,7 @@ export async function runStep(
         const md = typeof res.data === "string" ? res.data : String(res.data);
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md.trim() });
+        trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
       return {

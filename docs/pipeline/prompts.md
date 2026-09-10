@@ -254,6 +254,8 @@ Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. A
 <aktion>{{action}}</aktion>
 <lokalisierungshinweise>{{localization_notes}}</lokalisierungshinweise>
 <bereits_geschriebene_ueberschriften>{{written_headings}}</bereits_geschriebene_ueberschriften>
+<bereits_geschriebener_artikel>{{previous_content}}</bereits_geschriebener_artikel>
+<bereits_gesetzte_links>{{used_links}}</bereits_gesetzte_links>
 <geprüfte_links>{{verified_links}}</geprüfte_links>
 <tabelle>{{table_markdown}}</tabelle>
 <institutionen_im_zielmarkt>{{institutions}}</institutionen_im_zielmarkt>
@@ -295,7 +297,21 @@ INHALT:
   fordern es ausdrücklich.
 - Fettungen (**) an denselben Stellen wie im Original.
 
+ANSCHLUSS AN DIE VORHERIGEN ABSCHNITTE (STRIKT):
+- Die Abschnitte werden von oben nach unten geschrieben. In <bereits_geschriebener_artikel>
+  steht der komplette bisher geschriebene Artikel. Lies ihn vor dem Schreiben.
+- Wiederhole keine Aussage, keinen Hinweis und kein Beispiel, das dort schon steht.
+- Allgemeine Sicherheits- und Gesundheitshinweise (z. B. tierärztlichen Rat einholen)
+  kommen im gesamten Artikel GENAU EINMAL vor, auch nicht umformuliert oder als Nebensatz.
+- Dasselbe gilt für Standardsätze zu Ernährung, Versicherung, Anschaffungskosten
+  oder Rasseeignung: einmal im Artikel, nicht pro Abschnitt.
+
 VERLINKUNG:
+- Jede Ziel-URL wird im GESAMTEN Artikel idealerweise einmal verlinkt, maximal zweimal —
+  ein zweites Mal nur, wenn der Ankertext komplett anders lautet.
+- <bereits_gesetzte_links> nennt alle bereits verlinkten URLs samt Ankertext. URLs mit zwei
+  Verwendungen werden nicht mehr verlinkt; in <geprüfte_links> sind einmal genutzte Links markiert.
+- Nicht jeder Abschnitt braucht einen Link. Wenn kein passender freier Link existiert, keinen setzen.
 - Verwende ausschließlich Anker aus <geprüfte_links>. Erfinde niemals eine URL.
 - Der Ankertext muss zum Thema der Zielseite passen. Wenn die Zielseite ein anderes
   Thema behandelt als der Ankertext verspricht (z. B. Anker „Schlittenfahren beim Hund",
