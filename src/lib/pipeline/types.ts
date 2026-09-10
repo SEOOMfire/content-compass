@@ -6,6 +6,7 @@ export type StepKey =
   | "S3_target_status"
   | "S4_compare"
   | "S7a_link_pool"
+  | "S7b_serp_gap"
   | "S5_style_profile"
   | "S6_localization_plan"
   | "S7_link_candidates"
@@ -61,62 +62,70 @@ export const PIPELINE: StepDef[] = [
       "Hub-Seite, Navigation und Geschwisterartikel des Zielmarkts abrufen (max. 8 Abrufe).",
   },
   {
-    key: "S5_style_profile",
+    key: "S7b_serp_gap",
     order: 6,
+    label: "S7b · SERP-Lückenanalyse",
+    promptKey: "serp_gap_queries",
+    description:
+      "KI formuliert bis zu 5 site-beschränkte Suchanfragen (DataForSEO, 1. Seite) und übernimmt nur nützliche Treffer in den Pool.",
+  },
+  {
+    key: "S5_style_profile",
+    order: 7,
     label: "S5 · Stilprofil",
     promptKey: "style_profile",
     description: "Stilprofil aus den Geschwisterartikeln des Link-Pools ableiten (gecached).",
   },
   {
     key: "S6_localization_plan",
-    order: 7,
+    order: 8,
     label: "S6 · Lokalisierungsplan",
     promptKey: "localization_plan",
     description: "Abschnittsweiser Plan mit Aktion (keep/adapt/replace/drop) je Abschnitt.",
   },
   {
     key: "S7_link_candidates",
-    order: 8,
+    order: 9,
     label: "S7 · Linkkandidaten",
     description: "Zweistufig: Retrieval im Link-Pool, danach gezielte Site-Suche für Lücken.",
   },
   {
     key: "S8_link_select",
-    order: 9,
+    order: 10,
     label: "S8 · Linkauswahl",
     promptKey: "link_select",
     description: "LLM wählt nur aus Kandidatennummern – niemals freie URLs.",
   },
   {
     key: "S9_link_verify",
-    order: 10,
+    order: 11,
     label: "S9 · Linkprüfung",
     description: "Jede ausgewählte URL per GET prüfen: 200, Canonical, kein Soft-404.",
   },
   {
     key: "S10_localize_tables",
-    order: 11,
+    order: 12,
     label: "S10 · Tabellen lokalisieren",
     promptKey: "localize_table",
     description: "Tabellen übersetzen und Einheiten/Normen an den Zielmarkt anpassen.",
   },
   {
     key: "S11_generate_content",
-    order: 12,
+    order: 13,
     label: "S11 · Content erzeugen",
     promptKey: "generate_content",
     description: "Abschnittsweise Texterzeugung mit Stilprofil und verifizierten Links.",
   },
   {
     key: "S12_qa",
-    order: 13,
+    order: 14,
     label: "S12 · QA",
     promptKey: "qa",
     description: "Sprach-, Marken- und Claim-Prüfung des Gesamttexts.",
   },
   {
     key: "S13_export",
-    order: 14,
+    order: 15,
     label: "S13 · Export",
     description: "Markdown-Export inklusive Metadaten, Linkliste und Gap-Report.",
   },
@@ -221,6 +230,23 @@ export interface JobContext {
     fetches: { url: string; status: number; links: number; role: string }[];
     entries: PoolEntry[];
     siblings: { url: string; title: string | null; text: string }[];
+  };
+  /** S7b · Ergebnis der SERP-Lückenanalyse (DataForSEO). */
+  serpGap?: {
+    ran_at: string;
+    queries: string[];
+    location_code: number;
+    language_code: string;
+    host: string;
+    results: {
+      query: string;
+      keyword: string;
+      status: "ok" | "skipped" | "error";
+      hits: number;
+      error?: string;
+    }[];
+    added: { url: string; anchor_text: string | null; intent: string | null }[];
+    rejected: { url: string; reason: string }[];
   };
   /** Protokoll der zweistufigen Kandidatensuche (S7). */
   linkSearchLog?: SearchLogEntry[];

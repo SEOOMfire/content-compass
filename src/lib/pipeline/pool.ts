@@ -11,7 +11,8 @@ export type PoolOrigin =
   | "footer"
   | "search"
   | "hreflang"
-  | "candidate";
+  | "candidate"
+  | "serp";
 
 /**
  * `scope`:
