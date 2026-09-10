@@ -871,10 +871,17 @@ export async function runStep(
       const selection = ctx.linkSelection ?? [];
       const verified: JobContext["verifiedLinks"] = [];
       const broken: NonNullable<JobContext["brokenLinks"]> = [];
+      const summaryTpl = await loadTemplate("link_summary");
+      const summarySnapshots: string[] = [];
+      let sumIn = 0;
+      let sumOut = 0;
       await supabaseAdmin.from("verified_links").delete().eq("job_id", job.id);
+      let first = true;
       for (const s of selection) {
         if (!s.url) continue;
-        const v = await verifyUrl(s.url);
+        if (!first) await new Promise((r) => setTimeout(r, 1000));
+        first = false;
+        const { verification: v, doc } = await verifyAndExtract(s.url);
         if (!v.ok || v.http_status !== 200 || !v.canonical_ok) {
           broken.push({
             anchor: s.anchor,
