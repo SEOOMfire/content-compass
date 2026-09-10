@@ -19,6 +19,26 @@ export function renderTemplate(tpl: string, vars: Record<string, unknown>): stri
   });
 }
 
+/** Aufzeichnung aller Platzhalterwerte eines Schrittlaufs (für den Platzhalter-Report). */
+export interface RecordedPromptVars {
+  step_key: string;
+  template_version: number;
+  model: string;
+  vars: Record<string, unknown>;
+}
+
+let varRecorder: RecordedPromptVars[] | null = null;
+
+export function startVarRecording(): void {
+  varRecorder = [];
+}
+
+export function collectRecordedVars(): RecordedPromptVars[] {
+  const rec = varRecorder ?? [];
+  varRecorder = null;
+  return rec;
+}
+
 function apiKey(): string {
   const key = process.env["LOVABLE_API_KEY"];
   if (!key) throw new Error("LOVABLE_API_KEY fehlt – KI-Gateway nicht konfiguriert.");
