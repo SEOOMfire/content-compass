@@ -6,6 +6,10 @@ export interface GenerateSectionInput {
   de_heading: string;
   de_body: string;
   target_heading: string;
+  /** Überschriftenebene aus dem Quelldokument (1–3), wird 1:1 übernommen. */
+  heading_level: number;
+  /** Inhaltsverzeichnis-Abschnitt: nur Platzhalter, keine KI-Erstellung. */
+  is_toc: boolean;
   action: PlanAction;
   notes: string[];
   has_table: boolean;
@@ -14,6 +18,23 @@ export interface GenerateSectionInput {
   verified_links: VerifiedLink[];
   style_profile: unknown;
   market: unknown;
+}
+
+const TOC_HEADINGS = [
+  "inhaltsverzeichnis",
+  "inhalt",
+  "das erwartet dich",
+  "das erwartet dich hier",
+  "uberblick",
+  "ubersicht",
+  "auf einen blick",
+  "table of contents",
+];
+
+/** Erkennt Inhaltsverzeichnis-Abschnitte anhand der Überschrift. */
+export function isTocHeading(heading: string): boolean {
+  const n = norm(heading);
+  return TOC_HEADINGS.includes(n);
 }
 
 export class PlanMappingError extends Error {}
