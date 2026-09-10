@@ -569,6 +569,18 @@ export async function runStep(
         ...(r.error ? { error: r.error } : {}),
       }));
 
+      // Keine einzige erfolgreiche Abfrage → Schritt gilt als fehlgeschlagen (z. B. 401 = falsche Zugangsdaten).
+      if (!serp.results.some((r) => r.status === "ok")) {
+        const first = serp.results.find((r) => r.error)?.error ?? "unbekannter Fehler";
+        throw new Error(
+          first.includes("401")
+            ? "DataForSEO lehnt die Zugangsdaten ab (HTTP 401). Bitte API-Login und API-Passwort aus dem DataForSEO-Konto hinterlegen."
+            : `Keine SERP-Abfrage war erfolgreich: ${first}`,
+        );
+      }
+
+
+
       const added: { url: string; anchor_text: string | null; intent: string | null }[] = [];
       const rejected: { url: string; reason: string }[] = [];
       let selectSnapshot = "";
