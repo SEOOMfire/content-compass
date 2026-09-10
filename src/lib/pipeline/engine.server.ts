@@ -1196,6 +1196,21 @@ export async function runStep(
   }
 }
 
+/**
+ * Erzwingt die Überschriftenebene aus dem Quelldokument (#3):
+ * Die erste Überschrift im Abschnitt bekommt exakt so viele Rauten wie die
+ * deutsche Vorlage; fehlt sie, wird sie ergänzt.
+ */
+export function enforceHeadingLevel(md: string, level: number, heading: string): string {
+  const hashes = "#".repeat(Math.min(3, Math.max(1, level)));
+  const lines = md.split("\n");
+  const idx = lines.findIndex((l) => /^\s*#{1,6}\s+\S/.test(l));
+  if (idx === -1) return `${hashes} ${heading}\n\n${md}`.trim();
+  const text = (lines[idx] ?? "").replace(/^\s*#{1,6}\s+/, "").trim();
+  lines[idx] = `${hashes} ${text}`;
+  return lines.join("\n");
+}
+
 /** H1 nie als Slug ausgeben: Bindestriche auflösen, ersten Buchstaben groß. */
 function headline(raw: string): string {
   const text = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
