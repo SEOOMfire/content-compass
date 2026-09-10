@@ -87,6 +87,8 @@ export function buildSectionInputs(args: {
       de_heading: section.de_heading,
       de_body: body,
       target_heading: section.target_heading,
+      heading_level: Math.min(3, Math.max(1, levels.get(norm(section.de_heading)) ?? 2)),
+      is_toc: isTocHeading(section.de_heading),
       action: section.action,
       notes: section.notes ?? [],
       has_table: hasTable && table !== null,
