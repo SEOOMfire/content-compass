@@ -7,7 +7,12 @@ import {
   type TargetStatus,
 } from "./types";
 import { extractPage, verifyUrl } from "./extract.server";
-import { runPrompt, type PromptTemplateRow } from "./ai.server";
+import {
+  runPrompt,
+  startVarRecording,
+  collectRecordedVars,
+  type PromptTemplateRow,
+} from "./ai.server";
 import {
   buildGapReport,
   matchHubEntry,
