@@ -18,6 +18,7 @@ import {
   extractContentLinks,
   isEditorialUrl,
 } from "../src/lib/pipeline/hreflang.server";
+import { buildKeyword, serpTarget } from "../src/lib/pipeline/serp.server";
 import { isUsable, retrieveFromPool } from "../src/lib/pipeline/pool";
 import { checkLocalizedTable, tableRows } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
@@ -341,5 +342,28 @@ describe("16 · Zweite Ebene des Link-Pools", () => {
     expect(isUsable(candidate)).toBe(false);
     const hits = retrieveFromPool("zahnstein hund", [target, candidate]);
     expect(hits.some((h) => h.url === candidate.url)).toBe(false);
+  });
+});
+
+describe("17 · S7b SERP-Lückenanalyse", () => {
+  test("Suchanfragen werden immer auf die Zieldomain eingeschränkt", () => {
+    expect(buildKeyword("choroby psów", "maxizoo.pl")).toBe("site:maxizoo.pl choroby psów");
+    // Vom Modell mitgelieferte Operatoren werden entfernt, nicht verdoppelt.
+    expect(buildKeyword("site:example.com kleszcze", "maxizoo.pl")).toBe(
+      "site:maxizoo.pl kleszcze",
+    );
+  });
+
+  test("Standort und Sprache stammen aus dem Markt", () => {
+    const t = serpTarget({
+      domain: "https://www.maxizoo.pl",
+      locale: "pl-PL",
+      language: "Polnisch",
+      country: "Polen",
+    });
+    expect(t).toEqual({ location_code: 2616, language_code: "pl", host: "maxizoo.pl" });
+    expect(() =>
+      serpTarget({ domain: "fressnapf.hu", locale: "hu-HU", language: "Ungarisch", country: "Ungarn" }),
+    ).toThrow();
   });
 });
