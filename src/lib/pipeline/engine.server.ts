@@ -15,6 +15,7 @@ import {
 } from "./ai.server";
 import {
   buildGapReport,
+  isUsable,
   matchHubEntry,
   retrieveFromPool,
   MIN_POOL_SCORE,
@@ -106,6 +107,21 @@ function countBy(values: string[]): Record<string, number> {
     acc[v] = (acc[v] ?? 0) + 1;
     return acc;
   }, {});
+}
+
+/** Gehört eine URL zum redaktionellen Magazinbereich des Markts? */
+function isMagazineUrl(url: string, market: MarketRow): boolean {
+  const root = (market.magazine_root ?? "").trim();
+  try {
+    const path = new URL(url).pathname;
+    if (root) {
+      const rootPath = root.startsWith("http") ? new URL(root).pathname : root;
+      if (rootPath && path.startsWith(rootPath)) return true;
+    }
+    return /\/(magazyn|magazin|magazine|ratgeber|blog|poradnik|guide|conseils)\//.test(path);
+  } catch {
+    return false;
+  }
 }
 
 function hubMarket(market: MarketRow): HubMarket {
