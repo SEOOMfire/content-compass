@@ -921,8 +921,10 @@ export async function executeStep(jobId: string, stepKey: string) {
   });
   await supabaseAdmin.from("jobs").update({ current_step: def.key, status: "running" }).eq("id", jobId);
 
+  startVarRecording();
   try {
     const result = await runStep(stepKey, { id: jobId, source_url: job.source_url, context }, market);
+    const recordedVars = collectRecordedVars();
     const nextContext = { ...context, ...result.context };
     await supabaseAdmin
       .from("jobs")
