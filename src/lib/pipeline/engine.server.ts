@@ -1045,8 +1045,8 @@ export async function runStep(
           .map((l) => {
             const used = linkUsage.get(l.target_url) ?? [];
             return used.length
-              ? `- [${l.anchor}](${l.target_url}) — ACHTUNG: bereits 1x verlinkt (Ankertext: „${used.join("“, „")}“). Nur erneut verlinken, wenn der neue Ankertext komplett anders lautet und der Link inhaltlich wirklich nötig ist.`
-              : `- [${l.anchor}](${l.target_url})`;
+              ? `- [${l.anchor}](${l.target_url}) — ACHTUNG: bereits 1x verlinkt (Ankertext: „${used.join("“, „")}“). Nur erneut verlinken, wenn der neue Ankertext komplett anders lautet und der Link inhaltlich wirklich nötig ist.${linkMeta(l)}`
+              : `- [${l.anchor}](${l.target_url})${linkMeta(l)}`;
           })
           .join("\n");
 
