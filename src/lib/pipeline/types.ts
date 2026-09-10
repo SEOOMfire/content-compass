@@ -6,6 +6,7 @@ export type StepKey =
   | "S3_target_status"
   | "S4_compare"
   | "S7a_link_pool"
+  | "S7b_serp_gap"
   | "S5_style_profile"
   | "S6_localization_plan"
   | "S7_link_candidates"
