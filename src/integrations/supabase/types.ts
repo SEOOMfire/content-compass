@@ -24,6 +24,7 @@ export type Database = {
           model: string | null
           output: Json | null
           prompt_snapshot: string | null
+          prompt_vars: Json | null
           run_count: number
           status: string
           step_key: string
@@ -41,6 +42,7 @@ export type Database = {
           model?: string | null
           output?: Json | null
           prompt_snapshot?: string | null
+          prompt_vars?: Json | null
           run_count?: number
           status?: string
           step_key: string
@@ -58,6 +60,7 @@ export type Database = {
           model?: string | null
           output?: Json | null
           prompt_snapshot?: string | null
+          prompt_vars?: Json | null
           run_count?: number
           status?: string
           step_key?: string
