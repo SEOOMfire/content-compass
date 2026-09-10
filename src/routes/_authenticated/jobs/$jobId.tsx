@@ -108,19 +108,36 @@ function JobDetail() {
     }
   }
 
+  function downloadMarkdown(filename: string, markdown: string) {
+    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function downloadReport() {
     setBusy("report");
     try {
       const { filename, markdown } = await exportJobReport({ data: { jobId } });
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadMarkdown(filename, markdown);
       toast.success("Prozess-Report heruntergeladen");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Report fehlgeschlagen");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadVars() {
+    setBusy("vars");
+    try {
+      const { filename, markdown } = await exportPromptVars({ data: { jobId } });
+      downloadMarkdown(filename, markdown);
+      toast.success("Platzhalter-Datei heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export fehlgeschlagen");
     } finally {
       setBusy(null);
     }
