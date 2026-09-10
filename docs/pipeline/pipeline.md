@@ -171,6 +171,8 @@ Pro Anker bekommt die KI eine **nummerierte Liste** aus Titel und Seitentyp — 
 
 Jede gewählte Adresse wird live geprüft (HTTP 200 + Canonical + kein Soft-404). Bestanden → Eintrag in `verified_links` (Anker, Adresse, Status, Canonical-Ergebnis, Konfidenz). Nicht bestanden → Eintrag in der Liste verworfener Kandidaten **und** Löschung aus dem Link-Pool, damit dieselbe tote Adresse nicht erneut gewählt wird. Frühere Prüfergebnisse des Jobs werden vorher gelöscht (idempotent).
 
+**Inhaltszusammenfassung.** Derselbe Abruf liefert auch den Seitentext. Daraus erzeugt der Prompt `link_summary` je Zielseite einen Absatz (max. 60 Wörter, Zielsprache) plus Seitentyp (`ratgeber`, `kategorie`, `produkt`, `sonstige`); beides wird in `verified_links.summary` und `verified_links.page_type` gespeichert und in S11 mitgegeben. Damit entscheidet der Schreibschritt anhand des echten Inhalts statt nur anhand von Titel und Adresse. Zwischen zwei Abrufen liegt eine Sekunde Pause. Schlägt die Zusammenfassung fehl, bleibt der Link gültig, aber ohne Beschreibung; der Seitentyp wird dann aus der Textmenge abgeleitet.
+
 ---
 
 ## S10 · Tabellen lokalisieren
