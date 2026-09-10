@@ -4,7 +4,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Play, RefreshCw, ChevronDown, FileDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { runStepFn, runFromStepFn, exportJobReport } from "@/lib/pipeline.functions";
+import {
+  runStepFn,
+  runFromStepFn,
+  exportJobReport,
+  exportPromptVars,
+} from "@/lib/pipeline.functions";
 import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
