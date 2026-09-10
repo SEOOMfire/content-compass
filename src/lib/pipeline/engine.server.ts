@@ -897,12 +897,50 @@ export async function runStep(
             .eq("url", s.url);
           continue;
         }
+        // Jede verifizierte Zielseite wird einmal gelesen und in einem Absatz
+        // zusammengefasst, damit S11 den echten Inhalt kennt (nicht nur Titel/URL).
+        let summary = "";
+        let pageType = "";
+        if (doc) {
+          const body = doc.sections
+            .map((sec) => `${sec.heading}\n${sec.text}`)
+            .join("\n\n")
+            .slice(0, 6000);
+          try {
+            const res = await runPrompt<unknown>(summaryTpl, {
+              url: s.url,
+              title: doc.title ?? doc.h1 ?? "",
+              h1: doc.h1 ?? "",
+              meta_description: doc.metaDescription ?? "",
+              outline: doc.outline,
+              page_text: body,
+              language: market.language,
+            });
+            summarySnapshots.push(res.promptSnapshot);
+            sumIn += res.tokensIn;
+            sumOut += res.tokensOut;
+            const d = res.data as { summary?: unknown; page_type?: unknown } | string;
+            if (typeof d === "string") summary = d.trim();
+            else {
+              summary = typeof d?.summary === "string" ? d.summary.trim() : "";
+              pageType = typeof d?.page_type === "string" ? d.page_type.trim() : "";
+            }
+          } catch {
+            summary = "";
+          }
+          if (!pageType) {
+            pageType = doc.wordCount >= 250 ? "ratgeber" : "kategorie";
+          }
+        }
+
         const row = {
           anchor: s.anchor,
           target_url: s.url,
           http_status: v.http_status,
           canonical_ok: v.canonical_ok,
           ...(s.confidence ? { confidence: s.confidence } : {}),
+          ...(summary ? { summary } : {}),
+          ...(pageType ? { page_type: pageType } : {}),
         };
         verified.push(row);
         await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "pool", ...row });
@@ -910,6 +948,10 @@ export async function runStep(
       return {
         output: { verified, broken },
         context: { verifiedLinks: verified, brokenLinks: broken },
+        model: summaryTpl.model,
+        promptSnapshot: summarySnapshots.join("\n\n=====\n\n"),
+        tokensIn: sumIn,
+        tokensOut: sumOut,
       };
     }
 
