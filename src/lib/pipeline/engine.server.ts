@@ -1035,7 +1035,9 @@ export async function runStep(
           action: input.action,
           localization_notes: input.notes.join("\n- "),
           written_headings: written.join(", "),
-          verified_links: linksForPrompt,
+          verified_links: availableLinks(),
+          used_links: usedLinksForPrompt(),
+          previous_content: previousContent,
           table_markdown: input.table_markdown ?? "",
         });
         snapshots.push(res.promptSnapshot);
@@ -1044,6 +1046,7 @@ export async function runStep(
         const md = typeof res.data === "string" ? res.data : String(res.data);
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md.trim() });
+        trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
       return {
