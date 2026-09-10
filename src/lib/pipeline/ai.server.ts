@@ -186,6 +186,14 @@ export async function runPrompt<T = unknown>(
   const temperature = Number(tpl.temperature ?? 0.3);
   const maxTokens = tpl.max_tokens ?? 4000;
   const useResponses = tpl.model.startsWith("openai/");
+  if (varRecorder) {
+    varRecorder.push({
+      step_key: tpl.step_key,
+      template_version: tpl.version,
+      model: tpl.model,
+      vars,
+    });
+  }
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
