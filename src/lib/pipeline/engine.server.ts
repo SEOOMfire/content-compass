@@ -1186,8 +1186,8 @@ export async function runStep(
         .filter((l) => l !== "")
         .join("\n");
       return {
-        output: { length: md.length, gaps: gaps.length, broken: broken.length },
-        context: { exportMarkdown: md, gapReport: gaps },
+        output: { length: md.length, broken: broken.length },
+        context: { exportMarkdown: md },
       };
     }
 
