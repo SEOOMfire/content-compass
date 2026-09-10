@@ -1150,14 +1150,14 @@ export async function runStep(
 
     case "S13_export": {
       const source = requireSource(ctx);
-      const anchors = (ctx.plan?.sections ?? []).flatMap((s) => s.anchors ?? []);
-      const gaps = buildGapReport(anchors, ctx.verifiedLinks ?? [], ctx.linkSearchLog ?? []);
       const broken = ctx.brokenLinks ?? [];
       const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
       const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
       const readingMinutes = Math.max(1, Math.round(targetWords / 200));
+      // H1 nur ergänzen, wenn der Content selbst keine H1 enthält (#3).
+      const hasH1 = /^#\s+\S/m.test(bodyText);
       const md = [
-        `# ${headline(ctx.slug?.term_translated ?? source.h1 ?? "")}`,
+        hasH1 ? "" : `# ${headline(ctx.slug?.term_translated ?? source.h1 ?? "")}`,
         "",
         `> Quelle: ${source.url}`,
         `> Wortzahl (Ziel): ${targetWords} · Lesezeit: ${readingMinutes} Min.`,
