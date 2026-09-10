@@ -113,6 +113,23 @@ Anschließend werden die belegten hreflang-Ziele vorn eingefügt und die nicht a
 
 ---
 
+## S7b · SERP-Lückenanalyse (DataForSEO)
+
+Läuft direkt nach S7a und setzt einen gefüllten Link-Pool voraus. Ziel: Artikel im Zielmarkt finden, die weder über hreflang noch über Hub/Nachbarseiten auffindbar waren.
+
+1. **Suchanfragen (KI, Prompt `serp_gap_queries`).** Eingaben: Thema, Gliederung der deutschen Quelle, die im deutschen Text verlinkten Themen und bis zu 80 bereits bekannte Pool-Adressen. Ausgabe: maximal 5 Suchbegriffe in der Zielsprache, jeweils zu einem anderen Thema und ohne Suchoperatoren.
+2. **SERP-Abfrage.** Jede Anfrage geht als `site:<domain> <suchbegriff>` an DataForSEO (`serp/google/organic/live/advanced`, nur erste Ergebnisseite, `depth: 10`). Land und Sprache kommen automatisch aus dem `locale` des Markts. Alle Anfragen laufen parallel gegen ein hartes Gesamtbudget von 5 Minuten; noch offene Anfragen werden danach abgebrochen und als `skipped` protokolliert. Treffer fremder Hosts werden verworfen, ebenso Adressen, die bereits im Pool stehen (max. 40 Kandidaten).
+3. **Auswahl (KI, Prompt `serp_gap_select`).** Bewertet Titel, Adresse und Meta-Beschreibung und wählt ausschließlich redaktionell passende Seiten aus; Produkt-, Kategorie- und Serviceseiten sind ausgeschlossen.
+4. **Prüfung und Übernahme.** Jede ausgewählte Adresse wird einmal per GET geprüft (HTTP 200, Canonical, kein Soft-404). Nur bestandene Adressen landen in `link_pool` mit `origin = serp`, `scope = target`, `fetched = true`, `anchor_text` und `intent` (aus der Meta-Beschreibung). Abgelehnte Adressen stehen mit Grund im Schrittergebnis.
+
+**Zugangsdaten:** `DATAFORSEO_LOGIN` und `DATAFORSEO_PASSWORD` (serverseitig). Fehlen sie, bricht der Schritt mit klarer Meldung ab.
+
+**Ergebnis im Kontext:** `serpGap` (Anfragen, Standort/Sprache, Trefferprotokoll, übernommene und abgelehnte Adressen) sowie der um die SERP-Treffer erweiterte `linkPool`.
+
+---
+
+
+
 ## S5 · Stilprofil
 
 Zuerst wird ein bereits gespeichertes Profil für Markt + Content-Typ gesucht; existiert es, wird es ohne KI-Aufruf verwendet. Sonst werden Titel und Text der Geschwisterartikel aus S7a zusammengefügt (max. 12 000 Zeichen) und mit Prompt `style_profile` ausgewertet: Ansprache, Satzlänge, Überschriftenstil, Tonfall, wiederkehrende Formulierungen. Das Ergebnis wird dauerhaft gespeichert. Ohne Geschwisterartikel bricht der Schritt bewusst ab — es wird kein Stil erfunden.
