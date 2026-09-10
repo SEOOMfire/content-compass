@@ -157,7 +157,7 @@ Gefiltert wird zunächst auf den gewünschten Seitentyp; findet sich nichts, wir
 
 **Stufe 2 — gezielte Site-Suche.** Nur wenn kein Treffer existiert oder der beste unter 0,6 liegt, und solange das Budget von 10 Anfragen reicht. Bevorzugt wird die interne Suche des Markts (`search_url_pattern` mit `{q}`); daraus werden bis zu 8 Ergebnisse übernommen, die nicht `other` sind. Alternativ, falls konfiguriert, eine `site:`-Websuche. Neue Treffer wandern in den Pool und die Suche wird wiederholt.
 
-Jede Anfrage wird protokolliert (`search_log`: Anker, Suchbegriffe, ob Stufe 2 lief, Quelle, Trefferzahl) — daraus entsteht später der Gap-Report.
+Jede Anfrage wird protokolliert (`search_log`: Anker, Suchbegriffe, ob Stufe 2 lief, Quelle, Trefferzahl).
 
 ---
 
@@ -182,6 +182,10 @@ Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministis
 ---
 
 ## S11 · Content erzeugen
+
+**Überschriftenebenen.** Jeder Abschnitt übernimmt die Ebene (H1/H2/H3) des zugehörigen deutschen Quellabschnitts; die Ebene wird nach der Erzeugung erzwungen, falls das Modell abweicht.
+
+**Inhaltsverzeichnis.** Abschnitte, deren deutsche Überschrift ein Inhaltsverzeichnis ist (z. B. „Inhaltsverzeichnis", „Das erwartet dich", „Auf einen Blick"), werden nicht von der KI geschrieben. Es entsteht nur die Überschrift plus die Zeile `[INHALTSVERZEICHNIS – Platzhalter]`.
 
 **Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **nur** an Abschnitte mit Tabellenkennzeichen vergeben, in Originalreihenfolge.
 
