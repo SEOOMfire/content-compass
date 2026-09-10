@@ -195,6 +195,34 @@ export interface UrlVerification {
   reason?: string | undefined;
 }
 
+/** Prüft bereits geladenes HTML: 200, Canonical passt, kein Soft-404. */
+export function verifyHtml(
+  url: string,
+  finalUrl: string,
+  status: number,
+  html: string,
+): UrlVerification {
+  if (status !== 200) {
+    return { url, ok: false, http_status: status, canonical_ok: false, soft404: false, reason: `HTTP ${status}` };
+  }
+  const root = parse(html);
+  const canonical = root.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? null;
+  const canonical_ok = canonical
+    ? normalizeUrl(canonical) === normalizeUrl(finalUrl) || normalizeUrl(canonical) === normalizeUrl(url)
+    : false;
+  const heading = textOf(root.querySelector("h1")).toLowerCase();
+  const titleText = textOf(root.querySelector("title")).toLowerCase();
+  const soft404 = SOFT_404_MARKERS.some((m) => heading.includes(m) || titleText.includes(m));
+  return {
+    url,
+    ok: canonical_ok && !soft404,
+    http_status: status,
+    canonical_ok,
+    soft404,
+    reason: soft404 ? "Soft-404" : canonical_ok ? undefined : "Canonical weicht ab oder fehlt",
+  };
+}
+
 /** GET-Prüfung: 200, Canonical passt zur URL, kein Soft-404. Kein Canonical = nicht ok. */
 export async function verifyUrl(url: string): Promise<UrlVerification> {
   try {
