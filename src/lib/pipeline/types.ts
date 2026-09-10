@@ -231,6 +231,23 @@ export interface JobContext {
     entries: PoolEntry[];
     siblings: { url: string; title: string | null; text: string }[];
   };
+  /** S7b · Ergebnis der SERP-Lückenanalyse (DataForSEO). */
+  serpGap?: {
+    ran_at: string;
+    queries: string[];
+    location_code: number;
+    language_code: string;
+    host: string;
+    results: {
+      query: string;
+      keyword: string;
+      status: "ok" | "skipped" | "error";
+      hits: number;
+      error?: string;
+    }[];
+    added: { url: string; anchor_text: string | null; intent: string | null }[];
+    rejected: { url: string; reason: string }[];
+  };
   /** Protokoll der zweistufigen Kandidatensuche (S7). */
   linkSearchLog?: SearchLogEntry[];
   /** Poolkandidaten, die die HTTP-Prüfung in S9 nicht bestanden haben. */
