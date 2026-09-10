@@ -1,1 +1,1 @@
-ALTER TABLE public.job_steps ADD COLUMN IF NOT EXISTS prompt_vars jsonb;
+-- Custom SQL migration file, put your code below! --
