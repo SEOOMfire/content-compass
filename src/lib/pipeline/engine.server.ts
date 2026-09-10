@@ -14,7 +14,6 @@ import {
   type PromptTemplateRow,
 } from "./ai.server";
 import {
-  buildGapReport,
   isUsable,
   matchHubEntry,
   retrieveFromPool,

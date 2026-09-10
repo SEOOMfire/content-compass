@@ -127,7 +127,7 @@ export const PIPELINE: StepDef[] = [
     key: "S13_export",
     order: 15,
     label: "S13 · Export",
-    description: "Markdown-Export inklusive Metadaten, Linkliste und Gap-Report.",
+    description: "Markdown-Export inklusive Metadaten und Linkliste.",
   },
 ];
 
