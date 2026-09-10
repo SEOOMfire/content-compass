@@ -171,6 +171,10 @@ function JobDetail() {
             <FileDown className="mr-2 h-4 w-4" />
             {busy === "report" ? "Erstelle…" : "Prozess-Report (.md)"}
           </Button>
+          <Button variant="outline" onClick={downloadVars} disabled={busy !== null}>
+            <FileDown className="mr-2 h-4 w-4" />
+            {busy === "vars" ? "Erstelle…" : "Platzhalter (.md)"}
+          </Button>
           <Button onClick={() => runAll()} disabled={busy !== null}>
             <Play className="mr-2 h-4 w-4" /> Komplett ausführen
           </Button>
