@@ -64,9 +64,11 @@ export function buildSectionInputs(args: {
   const { plan, sourceSections, tables } = args;
   const unmatched: string[] = [];
   const bodies = new Map<string, string>();
+  const levels = new Map<string, number>();
   for (const s of sourceSections) {
     const key = norm(s.heading);
     bodies.set(key, [bodies.get(key), s.text].filter(Boolean).join("\n"));
+    if (!levels.has(key)) levels.set(key, s.level);
   }
 
   const sorted = [...tables].sort((a, b) => a.index - b.index);
