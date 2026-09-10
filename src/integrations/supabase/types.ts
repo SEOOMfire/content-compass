@@ -488,7 +488,9 @@ export type Database = {
           http_status: number | null
           id: string
           job_id: string
+          page_type: string | null
           source: string
+          summary: string | null
           target_url: string
         }
         Insert: {
@@ -499,7 +501,9 @@ export type Database = {
           http_status?: number | null
           id?: string
           job_id: string
+          page_type?: string | null
           source?: string
+          summary?: string | null
           target_url: string
         }
         Update: {
@@ -510,7 +514,9 @@ export type Database = {
           http_status?: number | null
           id?: string
           job_id?: string
+          page_type?: string | null
           source?: string
+          summary?: string | null
           target_url?: string
         }
         Relationships: [

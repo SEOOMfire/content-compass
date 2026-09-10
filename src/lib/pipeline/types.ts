@@ -190,6 +190,10 @@ export interface VerifiedLink {
   http_status: number;
   canonical_ok: boolean;
   confidence?: string;
+  /** Ein Absatz Inhaltszusammenfassung der Zielseite (S9). */
+  summary?: string;
+  /** "ratgeber" | "kategorie" | "produkt" | "sonstige" – aus der Zielseite abgeleitet. */
+  page_type?: string;
 }
 
 export interface JobContext {

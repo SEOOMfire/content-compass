@@ -141,6 +141,33 @@ export async function extractPage(url: string): Promise<SourceDoc> {
   return extractDoc(url, finalUrl, status, html);
 }
 
+/**
+ * Ein einziger Abruf: prüft die URL (200, Canonical, Soft-404) UND liefert bei
+ * Erfolg den extrahierten Seiteninhalt für die Zusammenfassung (S9).
+ */
+export async function verifyAndExtract(
+  url: string,
+): Promise<{ verification: UrlVerification; doc: SourceDoc | null }> {
+  try {
+    const { status, finalUrl, html } = await fetchHtml(url);
+    const verification = verifyHtml(url, finalUrl, status, html);
+    const doc = status === 200 ? extractDoc(url, finalUrl, status, html) : null;
+    return { verification, doc };
+  } catch (err) {
+    return {
+      verification: {
+        url,
+        ok: false,
+        http_status: 0,
+        canonical_ok: false,
+        soft404: false,
+        reason: err instanceof Error ? err.message : "Fehler",
+      },
+      doc: null,
+    };
+  }
+}
+
 function normalizeUrl(u: string): string {
   try {
     const p = new URL(u);
@@ -166,6 +193,34 @@ export interface UrlVerification {
   canonical_ok: boolean;
   soft404: boolean;
   reason?: string | undefined;
+}
+
+/** Prüft bereits geladenes HTML: 200, Canonical passt, kein Soft-404. */
+export function verifyHtml(
+  url: string,
+  finalUrl: string,
+  status: number,
+  html: string,
+): UrlVerification {
+  if (status !== 200) {
+    return { url, ok: false, http_status: status, canonical_ok: false, soft404: false, reason: `HTTP ${status}` };
+  }
+  const root = parse(html);
+  const canonical = root.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? null;
+  const canonical_ok = canonical
+    ? normalizeUrl(canonical) === normalizeUrl(finalUrl) || normalizeUrl(canonical) === normalizeUrl(url)
+    : false;
+  const heading = textOf(root.querySelector("h1")).toLowerCase();
+  const titleText = textOf(root.querySelector("title")).toLowerCase();
+  const soft404 = SOFT_404_MARKERS.some((m) => heading.includes(m) || titleText.includes(m));
+  return {
+    url,
+    ok: canonical_ok && !soft404,
+    http_status: status,
+    canonical_ok,
+    soft404,
+    reason: soft404 ? "Soft-404" : canonical_ok ? undefined : "Canonical weicht ab oder fehlt",
+  };
 }
 
 /** GET-Prüfung: 200, Canonical passt zur URL, kein Soft-404. Kein Canonical = nicht ok. */

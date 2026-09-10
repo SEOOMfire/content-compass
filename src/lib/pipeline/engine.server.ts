@@ -6,7 +6,7 @@ import {
   type PlanSection,
   type TargetStatus,
 } from "./types";
-import { extractPage, verifyUrl } from "./extract.server";
+import { extractPage, verifyAndExtract, verifyUrl } from "./extract.server";
 import {
   runPrompt,
   startVarRecording,
@@ -871,10 +871,17 @@ export async function runStep(
       const selection = ctx.linkSelection ?? [];
       const verified: JobContext["verifiedLinks"] = [];
       const broken: NonNullable<JobContext["brokenLinks"]> = [];
+      const summaryTpl = await loadTemplate("link_summary");
+      const summarySnapshots: string[] = [];
+      let sumIn = 0;
+      let sumOut = 0;
       await supabaseAdmin.from("verified_links").delete().eq("job_id", job.id);
+      let first = true;
       for (const s of selection) {
         if (!s.url) continue;
-        const v = await verifyUrl(s.url);
+        if (!first) await new Promise((r) => setTimeout(r, 1000));
+        first = false;
+        const { verification: v, doc } = await verifyAndExtract(s.url);
         if (!v.ok || v.http_status !== 200 || !v.canonical_ok) {
           broken.push({
             anchor: s.anchor,
@@ -890,12 +897,50 @@ export async function runStep(
             .eq("url", s.url);
           continue;
         }
+        // Jede verifizierte Zielseite wird einmal gelesen und in einem Absatz
+        // zusammengefasst, damit S11 den echten Inhalt kennt (nicht nur Titel/URL).
+        let summary = "";
+        let pageType = "";
+        if (doc) {
+          const body = doc.sections
+            .map((sec) => `${sec.heading}\n${sec.text}`)
+            .join("\n\n")
+            .slice(0, 6000);
+          try {
+            const res = await runPrompt<unknown>(summaryTpl, {
+              url: s.url,
+              title: doc.title ?? doc.h1 ?? "",
+              h1: doc.h1 ?? "",
+              meta_description: doc.metaDescription ?? "",
+              outline: doc.outline,
+              page_text: body,
+              language: market.language,
+            });
+            summarySnapshots.push(res.promptSnapshot);
+            sumIn += res.tokensIn;
+            sumOut += res.tokensOut;
+            const d = res.data as { summary?: unknown; page_type?: unknown } | string;
+            if (typeof d === "string") summary = d.trim();
+            else {
+              summary = typeof d?.summary === "string" ? d.summary.trim() : "";
+              pageType = typeof d?.page_type === "string" ? d.page_type.trim() : "";
+            }
+          } catch {
+            summary = "";
+          }
+          if (!pageType) {
+            pageType = doc.wordCount >= 250 ? "ratgeber" : "kategorie";
+          }
+        }
+
         const row = {
           anchor: s.anchor,
           target_url: s.url,
           http_status: v.http_status,
           canonical_ok: v.canonical_ok,
           ...(s.confidence ? { confidence: s.confidence } : {}),
+          ...(summary ? { summary } : {}),
+          ...(pageType ? { page_type: pageType } : {}),
         };
         verified.push(row);
         await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "pool", ...row });
@@ -903,6 +948,10 @@ export async function runStep(
       return {
         output: { verified, broken },
         context: { verifiedLinks: verified, brokenLinks: broken },
+        model: summaryTpl.model,
+        promptSnapshot: summarySnapshots.join("\n\n=====\n\n"),
+        tokensIn: sumIn,
+        tokensOut: sumOut,
       };
     }
 
@@ -983,14 +1032,21 @@ export async function runStep(
       const linkUsage = new Map<string, string[]>();
       const allLinks = ctx.verifiedLinks ?? [];
 
+      const linkMeta = (l: (typeof allLinks)[number]) => {
+        const parts: string[] = [];
+        if (l.page_type) parts.push(`Seitentyp: ${l.page_type}`);
+        if (l.summary) parts.push(`Inhalt: ${l.summary}`);
+        return parts.length ? `\n  ${parts.join(" | ")}` : "";
+      };
+
       const availableLinks = () =>
         allLinks
           .filter((l) => (linkUsage.get(l.target_url)?.length ?? 0) < 2)
           .map((l) => {
             const used = linkUsage.get(l.target_url) ?? [];
             return used.length
-              ? `- [${l.anchor}](${l.target_url}) — ACHTUNG: bereits 1x verlinkt (Ankertext: „${used.join("“, „")}“). Nur erneut verlinken, wenn der neue Ankertext komplett anders lautet und der Link inhaltlich wirklich nötig ist.`
-              : `- [${l.anchor}](${l.target_url})`;
+              ? `- [${l.anchor}](${l.target_url}) — ACHTUNG: bereits 1x verlinkt (Ankertext: „${used.join("“, „")}“). Nur erneut verlinken, wenn der neue Ankertext komplett anders lautet und der Link inhaltlich wirklich nötig ist.${linkMeta(l)}`
+              : `- [${l.anchor}](${l.target_url})${linkMeta(l)}`;
           })
           .join("\n");
 
