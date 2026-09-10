@@ -205,11 +205,10 @@ Der gesamte erzeugte Text wird mit Prompt `qa` geprüft, zusammen mit Sprache, L
 
 Erzeugt das fertige Markdown ohne weiteren KI-Aufruf:
 
-* H1 aus dem übersetzten Begriff, **nie als Slug** (Bindestriche aufgelöst, erster Buchstabe groß),
+* H1 aus dem übersetzten Begriff, **nie als Slug** (Bindestriche aufgelöst, erster Buchstabe groß) — sie entfällt, wenn der Text bereits eine eigene H1 enthält,
 * Kopfzeilen: Quelle, Wortzahl des Zieltexts und daraus berechnete **Lesezeit** (200 Wörter/Minute, mindestens 1), Zielstatus, Zielermittlung, hreflang-Hinweis, Umfang des Link-Pools,
-* alle Abschnitte in Planreihenfolge,
+* alle Abschnitte in Planreihenfolge, jede Überschrift in genau der Ebene (H1/H2/H3) des deutschen Originalabschnitts,
 * Liste der verifizierten Links mit HTTP-Status,
-* **Gap-Report:** jeder geplante Anker ohne verifizierten Link mit Begründung — „nicht gesucht", „keine Poolkandidaten, Site-Suche nicht ausgelöst", „im Zielmarkt nicht gefunden (Pool + Site-Suche)" oder „Kandidaten gefunden, aber keiner bestand die HTTP-Prüfung",
 * Liste der verworfenen Poolkandidaten,
 * Abschlusshinweis des Markts, falls gepflegt.
 
