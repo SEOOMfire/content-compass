@@ -1003,11 +1003,12 @@ export async function runStep(
 
       const trackLinks = (markdown: string) => {
         for (const l of allLinks) {
-          const re = new RegExp(`\\[([^\\]]{1,200})\\]\\(\\s*${escapeRegex(l.target_url)}[^)]*\\)`, "g");
+          const escaped = l.target_url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp(`\\[([^\\]]{1,200})\\]\\(\\s*${escaped}[^)]*\\)`, "g");
           let m: RegExpExecArray | null;
           while ((m = re.exec(markdown)) !== null) {
             const list = linkUsage.get(l.target_url) ?? [];
-            list.push(m[1]);
+            list.push(m[1] ?? "");
             linkUsage.set(l.target_url, list);
           }
         }
