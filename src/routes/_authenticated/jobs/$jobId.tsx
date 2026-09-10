@@ -4,7 +4,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Play, RefreshCw, ChevronDown, FileDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { runStepFn, runFromStepFn, exportJobReport } from "@/lib/pipeline.functions";
+import {
+  runStepFn,
+  runFromStepFn,
+  exportJobReport,
+  exportPromptVars,
+} from "@/lib/pipeline.functions";
 import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -103,19 +108,36 @@ function JobDetail() {
     }
   }
 
+  function downloadMarkdown(filename: string, markdown: string) {
+    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function downloadReport() {
     setBusy("report");
     try {
       const { filename, markdown } = await exportJobReport({ data: { jobId } });
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadMarkdown(filename, markdown);
       toast.success("Prozess-Report heruntergeladen");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Report fehlgeschlagen");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadVars() {
+    setBusy("vars");
+    try {
+      const { filename, markdown } = await exportPromptVars({ data: { jobId } });
+      downloadMarkdown(filename, markdown);
+      toast.success("Platzhalter-Datei heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export fehlgeschlagen");
     } finally {
       setBusy(null);
     }
@@ -148,6 +170,10 @@ function JobDetail() {
           <Button variant="outline" onClick={downloadReport} disabled={busy !== null}>
             <FileDown className="mr-2 h-4 w-4" />
             {busy === "report" ? "Erstelle…" : "Prozess-Report (.md)"}
+          </Button>
+          <Button variant="outline" onClick={downloadVars} disabled={busy !== null}>
+            <FileDown className="mr-2 h-4 w-4" />
+            {busy === "vars" ? "Erstelle…" : "Platzhalter (.md)"}
           </Button>
           <Button onClick={() => runAll()} disabled={busy !== null}>
             <Play className="mr-2 h-4 w-4" /> Komplett ausführen
