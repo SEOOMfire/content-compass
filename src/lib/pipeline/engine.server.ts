@@ -615,7 +615,9 @@ export async function runStep(
         locale: market.locale,
         language: market.language,
         country: market.country,
+        path_prefix: (market["path_prefix"] as string | null) ?? null,
       };
+
       const host = marketHost(serpMarket);
       const topic = source.h1 ?? source.title ?? job.source_url;
       const knownUrls = new Set(poolEntries.map((e) => e.url.replace(/\/$/, "")));
