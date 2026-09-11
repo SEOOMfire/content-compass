@@ -179,6 +179,50 @@ export type Database = {
           },
         ]
       }
+      market_paths: {
+        Row: {
+          confirmed_at: string | null
+          de_segment: string
+          http_status: number | null
+          id: string
+          market_id: string
+          origin: string
+          sample_url: string | null
+          target_segment: string
+          updated_at: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          de_segment: string
+          http_status?: number | null
+          id?: string
+          market_id: string
+          origin?: string
+          sample_url?: string | null
+          target_segment: string
+          updated_at?: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          de_segment?: string
+          http_status?: number | null
+          id?: string
+          market_id?: string
+          origin?: string
+          sample_url?: string | null
+          target_segment?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_paths_market_id_fkey"
+            columns: ["market_id"]
+            isOneToOne: false
+            referencedRelation: "markets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       markets: {
         Row: {
           active: boolean
