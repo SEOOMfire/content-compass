@@ -277,3 +277,26 @@ export const inviteUser = createServerFn({ method: "POST" })
 
     return { userId, email, emailSent, link };
   });
+
+/** Pfadverzeichnis eines Markts aus den Sitemaps (DE ↔ Zielland) aufbauen. */
+export const importMarketPaths = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ marketId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertRole(context.supabase as never, context.userId, "admin");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: market, error } = await supabaseAdmin
+      .from("markets")
+      .select("id,domain,locale")
+      .eq("id", data.marketId)
+      .single();
+    if (error || !market) throw new Error("Markt nicht gefunden.");
+    const { importPathsFromSitemaps } = await import("@/lib/pipeline/market-paths.server");
+    const res = await importPathsFromSitemaps(market);
+    return {
+      saved: res.saved,
+      pairs: Object.keys(res.pairs).length,
+      sitemaps: res.sitemaps.length,
+      log: res.sitemaps.map((s) => `${s.url} → HTTP ${s.status}, ${s.urls} Einträge, ${s.pairs} Paare`),
+    };
+  });
