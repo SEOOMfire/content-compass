@@ -10,6 +10,8 @@
 const ENDPOINT = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced";
 
 export const SERP_MAX_QUERIES = 5;
+/** S7c · zusätzliche Abfragen für Linkchancen. */
+export const SERP_MAX_OPPORTUNITY_QUERIES = 10;
 export const SERP_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
 /** Nur die erste Ergebnisseite. */
 export const SERP_DEPTH = 10;
@@ -19,7 +21,10 @@ export interface SerpMarket {
   locale: string | null;
   language: string;
   country: string;
+  /** Sprachverzeichnis des Markts, z. B. "/fr" – fließt in site: ein. */
+  path_prefix?: string | null;
 }
+
 
 export interface SerpItem {
   url: string;
@@ -81,10 +86,24 @@ export function marketHost(market: SerpMarket): string {
   }
 }
 
+/** Sprachverzeichnis normalisiert, z. B. "fr" → "/fr"; ohne Präfix leer. */
+export function marketPathPrefix(market: SerpMarket): string {
+  const raw = (market.path_prefix ?? "").trim();
+  const segs = raw.split("/").filter(Boolean);
+  return segs.length ? `/${segs.join("/")}` : "";
+}
+
+/** site:-Operand inkl. Sprachverzeichnis, z. B. "fressnapf.ch/fr". */
+export function siteOperand(market: SerpMarket): string {
+  return `${marketHost(market)}${marketPathPrefix(market)}`;
+}
+
 export function serpTarget(market: SerpMarket): {
   location_code: number;
   language_code: string;
   host: string;
+  site: string;
+  path_prefix: string;
 } {
   const locale = market.locale ?? "";
   const location = LOCATION_CODES[locale];
@@ -94,14 +113,21 @@ export function serpTarget(market: SerpMarket): {
       `Für den Markt „${market.country} / ${market.language}" ist kein SERP-Standort hinterlegt (locale: ${locale || "leer"}).`,
     );
   }
-  return { location_code: location, language_code: language, host: marketHost(market) };
+  return {
+    location_code: location,
+    language_code: language,
+    host: marketHost(market),
+    site: siteOperand(market),
+    path_prefix: marketPathPrefix(market),
+  };
 }
 
-/** Suchanfrage immer auf die Zieldomain einschränken. */
-export function buildKeyword(query: string, host: string): string {
+/** Suchanfrage immer auf die Zieldomain (inkl. Sprachverzeichnis) einschränken. */
+export function buildKeyword(query: string, site: string): string {
   const cleaned = query.replace(/site:\S+/gi, "").trim();
-  return `site:${host} ${cleaned}`.trim();
+  return `site:${site} ${cleaned}`.trim();
 }
+
 
 interface DfsResponse {
   status_code?: number;
@@ -121,12 +147,14 @@ interface DfsResponse {
   }[];
 }
 
+type SerpTarget = ReturnType<typeof serpTarget>;
+
 async function runOne(
   query: string,
-  target: { location_code: number; language_code: string; host: string },
+  target: SerpTarget,
   signal: AbortSignal,
 ): Promise<SerpQueryResult> {
-  const keyword = buildKeyword(query, target.host);
+  const keyword = buildKeyword(query, target.site);
   const res = await fetch(ENDPOINT, {
     method: "POST",
     signal,
@@ -174,7 +202,10 @@ async function runOne(
     }))
     .filter((i) => {
       try {
-        return new URL(i.url).hostname.replace(/^www\./, "") === target.host;
+        const u = new URL(i.url);
+        if (u.hostname.replace(/^www\./, "") !== target.host) return false;
+        if (target.path_prefix && !u.pathname.startsWith(`${target.path_prefix}/`)) return false;
+        return true;
       } catch {
         return false;
       }
@@ -183,16 +214,26 @@ async function runOne(
 }
 
 /**
- * Bis zu 5 Abfragen parallel, hartes Gesamtbudget. Nicht rechtzeitig
- * beantwortete Abfragen werden als „skipped" zurückgegeben.
+ * Abfragen parallel, hartes Gesamtbudget. Nicht rechtzeitig beantwortete
+ * Abfragen werden als „skipped" zurückgegeben.
  */
 export async function runSerpQueries(
   queries: string[],
   market: SerpMarket,
-  opts: { timeoutMs?: number } = {},
-): Promise<{ results: SerpQueryResult[]; location_code: number; language_code: string; host: string }> {
+  opts: { timeoutMs?: number; maxQueries?: number } = {},
+): Promise<{
+  results: SerpQueryResult[];
+  location_code: number;
+  language_code: string;
+  host: string;
+  site: string;
+  path_prefix: string;
+}> {
   const target = serpTarget(market);
-  const list = queries.map((q) => q.trim()).filter(Boolean).slice(0, SERP_MAX_QUERIES);
+  const list = queries
+    .map((q) => q.trim())
+    .filter(Boolean)
+    .slice(0, opts.maxQueries ?? SERP_MAX_QUERIES);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? SERP_TOTAL_TIMEOUT_MS);
   try {
@@ -206,7 +247,7 @@ export async function runSerpQueries(
       const aborted = err?.name === "AbortError" || controller.signal.aborted;
       return {
         query,
-        keyword: buildKeyword(query, target.host),
+        keyword: buildKeyword(query, target.site),
         status: aborted ? ("skipped" as const) : ("error" as const),
         items: [],
         error: aborted ? "Zeitbudget von 5 Minuten überschritten." : (err?.message ?? "Fehler"),
@@ -215,5 +256,6 @@ export async function runSerpQueries(
     return { results, ...target };
   } finally {
     clearTimeout(timer);
+
   }
 }

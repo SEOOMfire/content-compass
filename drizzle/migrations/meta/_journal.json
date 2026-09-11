@@ -43,6 +43,13 @@
       "when": 1789110510239,
       "tag": "0005_create_market_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789118581105,
+      "tag": "0006_seed_serp_opportunity_prompt",
+      "breakpoints": true
     }
   ]
 }

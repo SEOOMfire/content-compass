@@ -18,10 +18,12 @@ Platzhalter in geschweiften Klammern werden vor dem Absenden durch echte Werte e
 | S12 · QA | `qa` | google/gemini-3.7-flash | 0,2 | 4000 | JSON |
 | S7b · SERP-Suchanfragen | `serp_gap_queries` | google/gemini-3.7-flash | 0,4 | 1500 | JSON |
 | S7b · SERP-Treffer auswählen | `serp_gap_select` | google/gemini-3.7-flash | 0,2 | 2000 | JSON |
+| S7c · SERP-Linkchancen | `serp_opportunity_queries` | google/gemini-3.7-flash | 0,4 | 2000 | JSON |
 
 S1, S3, S7a, S7, S9 und S13 arbeiten ohne KI.
 
-Die beiden S7b-Prompts stehen am Ende dieses Dokuments.
+Die S7b- und S7c-Prompts stehen am Ende dieses Dokuments (S7c nutzt für die Auswahl der Treffer ebenfalls `serp_gap_select`).
+
 
 ---
 
@@ -438,6 +440,49 @@ Suchergebnisse (Nummer, Titel, URL, Beschreibung):
 ```
 
 ---
+
+## S7c · SERP-Linkchancen — `serp_opportunity_queries`
+
+Leitet aus dem deutschen Quelltext bis zu 10 zusätzliche Linkchancen ab. Die Auswahl der Treffer übernimmt anschließend `serp_gap_select`.
+
+**System-Prompt**
+
+```
+Du bist SEO-Analyst für den Zielmarkt {{country}} (Sprache: {{language}}, Domain-Einschränkung: {{site}}).
+Aufgabe: Lies den deutschen Quelltext und überlege, an welchen Stellen zusätzlich ein interner Link sinnvoll wäre. Formuliere für jede dieser Chancen einen Suchbegriff, mit dem sich prüfen lässt, ob es dazu eine passende Seite auf der Zieldomain gibt.
+
+Regeln:
+- Maximal {{max_queries}} Chancen, jede zu einem anderen Thema.
+- Suchbegriff ausschließlich in der Sprache {{language}}, so wie im Zielmarkt gesucht wird – keine wörtliche Übersetzung deutscher Slugs.
+- Schreibe NUR den Suchbegriff, ohne Operatoren wie site: – die Einschränkung auf {{site}} (inklusive Sprachverzeichnis {{path_prefix}}) wird technisch ergänzt.
+- Wähle Themen mit hoher Wahrscheinlichkeit, dass es dazu einen redaktionellen Magazin-/Ratgeberartikel im Zielmarkt gibt (typische Standardthemen der Tierhaltung).
+- Keine Themen, die im vorhandenen Link-Pool bereits gut abgedeckt sind, und keine Wiederholung der bereits gestellten Suchanfragen.
+- Keine Produkt-, Kategorie- oder Serviceseiten anpeilen.
+
+Antworte ausschließlich als JSON:
+{"opportunities":[{"topic":"Thema in Deutsch","query":"Suchbegriff in der Zielsprache","reason":"kurz, warum hier ein Link passt"}]}
+```
+
+**User-Prompt**
+
+```
+Thema des Artikels: {{topic}}
+
+Gliederung der deutschen Quelle:
+{{de_outline}}
+
+Abschnitte der deutschen Quelle (gekürzt):
+{{de_sections}}
+
+Bereits im Link-Pool des Zielmarkts vorhanden:
+{{pool_urls}}
+
+Bereits gestellte Suchanfragen (nicht wiederholen):
+{{existing_queries}}
+```
+
+---
+
 
 ## `translate_path_segment` · Pfadsegmente übersetzen
 

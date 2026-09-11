@@ -362,12 +362,29 @@ describe("17 · S7b SERP-Lückenanalyse", () => {
       language: "Polnisch",
       country: "Polen",
     });
-    expect(t).toEqual({ location_code: 2616, language_code: "pl", host: "maxizoo.pl" });
+    expect(t).toEqual({
+      location_code: 2616,
+      language_code: "pl",
+      host: "maxizoo.pl",
+      site: "maxizoo.pl",
+      path_prefix: "",
+    });
+    // Sprachverzeichnis fließt in die site:-Einschränkung ein.
+    expect(
+      serpTarget({
+        domain: "fressnapf.ch",
+        locale: "fr-CH",
+        language: "Französisch",
+        country: "Schweiz",
+        path_prefix: "/fr",
+      }).site,
+    ).toBe("fressnapf.ch/fr");
     expect(() =>
       serpTarget({ domain: "fressnapf.hu", locale: "hu-HU", language: "Ungarisch", country: "Ungarn" }),
     ).toThrow();
   });
 });
+
 
 describe("18 · Pfadpräfix und Pfadlücken", () => {
   const chFr = {

@@ -615,7 +615,9 @@ export async function runStep(
         locale: market.locale,
         language: market.language,
         country: market.country,
+        path_prefix: (market["path_prefix"] as string | null) ?? null,
       };
+
       const host = marketHost(serpMarket);
       const topic = source.h1 ?? source.title ?? job.source_url;
       const knownUrls = new Set(poolEntries.map((e) => e.url.replace(/\/$/, "")));
@@ -804,6 +806,241 @@ export async function runStep(
       };
     }
 
+    case "S7c_serp_opportunities": {
+      const source = requireSource(ctx);
+      const poolEntries: PoolEntry[] = [...(ctx.linkPool?.entries ?? [])];
+      if (!poolEntries.length) {
+        throw new Error("Kein Link-Pool vorhanden – bitte zuerst S7a ausführen.");
+      }
+      const {
+        credentialsPresent,
+        runSerpQueries,
+        siteOperand,
+        marketHost,
+        SERP_MAX_OPPORTUNITY_QUERIES,
+      } = await import("./serp.server");
+      if (!credentialsPresent()) {
+        throw new Error(
+          "DataForSEO ist nicht konfiguriert (DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD fehlen).",
+        );
+      }
+      const serpMarket = {
+        domain: market.domain,
+        locale: market.locale,
+        language: market.language,
+        country: market.country,
+        path_prefix: (market["path_prefix"] as string | null) ?? null,
+      };
+      const host = marketHost(serpMarket);
+      const site = siteOperand(serpMarket);
+      const topic = source.h1 ?? source.title ?? job.source_url;
+      const knownUrls = new Set(poolEntries.map((e) => e.url.replace(/\/$/, "")));
+
+      // 1 · KI liest den Quelltext und leitet zusätzliche Linkchancen ab.
+      const tplQ = await loadTemplate("serp_opportunity_queries");
+      const resQ = await runPrompt<unknown>(tplQ, {
+        country: market.country,
+        language: market.language,
+        host,
+        site,
+        path_prefix: serpMarket.path_prefix ?? "",
+        topic,
+        max_queries: String(SERP_MAX_OPPORTUNITY_QUERIES),
+        de_outline: source.outline.slice(0, 3000),
+        de_sections: source.sections
+          .map((s) => `## ${s.heading}\n${s.text.slice(0, 800)}`)
+          .join("\n\n")
+          .slice(0, 12000),
+        pool_urls: poolEntries
+          .filter(isUsable)
+          .slice(0, 80)
+          .map((e) => `- ${e.anchor_text ?? ""} → ${e.url}`)
+          .join("\n"),
+        existing_queries: (ctx.serpGap?.queries ?? []).join("\n"),
+      });
+      const ideas = ((): { topic: string; query: string; reason?: string }[] => {
+        const d = resQ.data as { opportunities?: unknown; queries?: unknown } | unknown[];
+        const arr = Array.isArray(d)
+          ? d
+          : Array.isArray((d as { opportunities?: unknown })?.opportunities)
+            ? ((d as { opportunities: unknown[] }).opportunities)
+            : Array.isArray((d as { queries?: unknown })?.queries)
+              ? ((d as { queries: unknown[] }).queries)
+              : [];
+        const out: { topic: string; query: string; reason?: string }[] = [];
+        const seenQ = new Set<string>();
+        for (const raw of arr) {
+          const o =
+            typeof raw === "string"
+              ? { query: raw }
+              : (raw as { query?: string; keyword?: string; topic?: string; reason?: string });
+          const query = (o.query ?? o.keyword ?? "").trim();
+          if (!query || seenQ.has(query.toLowerCase())) continue;
+          seenQ.add(query.toLowerCase());
+          out.push({
+            topic: (o.topic ?? query).trim(),
+            query,
+            ...(o.reason ? { reason: o.reason } : {}),
+          });
+        }
+        return out.slice(0, SERP_MAX_OPPORTUNITY_QUERIES);
+      })();
+      if (!ideas.length) throw new Error("Die KI hat keine zusätzlichen Suchanfragen geliefert.");
+
+      // 2 · DataForSEO, bis zu 10 Abfragen, hartes 5-Minuten-Budget.
+      const serp = await runSerpQueries(
+        ideas.map((i) => i.query),
+        serpMarket,
+        { maxQueries: SERP_MAX_OPPORTUNITY_QUERIES },
+      );
+      const seen = new Set<string>();
+      const items = serp.results
+        .flatMap((r) => r.items)
+        .filter((i) => {
+          const key = i.url.replace(/\/$/, "");
+          if (seen.has(key) || knownUrls.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 60);
+
+      const resultLog = serp.results.map((r) => ({
+        query: r.query,
+        keyword: r.keyword,
+        status: r.status,
+        hits: r.items.length,
+        ...(r.error ? { error: r.error } : {}),
+      }));
+
+      if (!serp.results.some((r) => r.status === "ok")) {
+        const first = serp.results.find((r) => r.error)?.error ?? "unbekannter Fehler";
+        throw new Error(
+          first.includes("401")
+            ? "DataForSEO lehnt die Zugangsdaten ab (HTTP 401). Bitte API-Login und API-Passwort aus dem DataForSEO-Konto hinterlegen."
+            : `Keine SERP-Abfrage war erfolgreich: ${first}`,
+        );
+      }
+
+      const added: { url: string; anchor_text: string | null; intent: string | null }[] = [];
+      const rejected: { url: string; reason: string }[] = [];
+      let selectSnapshot = "";
+      let selModel: string | undefined;
+      let tokensIn = resQ.tokensIn;
+      let tokensOut = resQ.tokensOut;
+
+      if (items.length) {
+        // 3 · Auswahl der wirklich nützlichen Treffer.
+        const tplS = await loadTemplate("serp_gap_select");
+        const resS = await runPrompt<unknown>(tplS, {
+          country: market.country,
+          language: market.language,
+          host,
+          topic,
+          serp_results: items
+            .map(
+              (i, n) =>
+                `${n + 1}. ${i.title ?? "(ohne Titel)"}\n   ${i.url}\n   ${i.description ?? ""}`,
+            )
+            .join("\n"),
+        });
+        selectSnapshot = resS.promptSnapshot;
+        selModel = resS.model;
+        tokensIn += resS.tokensIn;
+        tokensOut += resS.tokensOut;
+        const chosen = ((): { url: string; anchor_text: string | null; intent: string | null }[] => {
+          const d = resS.data as { selected?: unknown } | unknown[];
+          const arr = Array.isArray(d)
+            ? d
+            : Array.isArray((d as { selected?: unknown })?.selected)
+              ? ((d as { selected: unknown[] }).selected)
+              : [];
+          return arr
+            .map((s) => {
+              const o = s as { url?: string; index?: number; anchor_text?: string; intent?: string };
+              const byIndex =
+                typeof o.index === "number" && o.index >= 1 && o.index <= items.length
+                  ? items[o.index - 1]
+                  : undefined;
+              const url = o.url ?? byIndex?.url ?? "";
+              const match = items.find((i) => i.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
+              if (!match) return null;
+              return {
+                url: match.url,
+                anchor_text: o.anchor_text ?? match.title ?? null,
+                intent: o.intent ?? match.description ?? null,
+              };
+            })
+            .filter(Boolean) as { url: string; anchor_text: string | null; intent: string | null }[];
+        })();
+
+        // 4 · Kurze technische Prüfung, bevor etwas in den Pool wandert.
+        for (const c of chosen) {
+          const v = await verifyUrl(c.url);
+          if (!v.ok) {
+            rejected.push({ url: c.url, reason: v.reason ?? `HTTP ${v.http_status}` });
+            continue;
+          }
+          added.push(c);
+          const entry: PoolEntry = {
+            url: c.url,
+            anchor_text: c.anchor_text,
+            path_type: isMagazineUrl(c.url, market) ? "magazine" : "other",
+            origin: "serp",
+            source_page: `serp-chance:${site}`,
+            fetched: true,
+            intent: c.intent,
+            scope: "target",
+          };
+          poolEntries.push(entry);
+          await supabaseAdmin.from("link_pool").upsert(
+            {
+              market_id: market.id,
+              content_type: "magazine",
+              source_page: entry.source_page,
+              url: entry.url,
+              anchor_text: entry.anchor_text,
+              path_type: entry.path_type,
+              origin: entry.origin,
+              fetched: true,
+              intent: entry.intent,
+              scope: "target",
+              http_status: v.http_status,
+              fetched_at: new Date().toISOString(),
+            } as never,
+            { onConflict: "market_id,content_type,url" },
+          );
+        }
+      }
+
+      const serpOpportunities = {
+        ran_at: new Date().toISOString(),
+        site,
+        host,
+        path_prefix: serp.path_prefix,
+        location_code: serp.location_code,
+        language_code: serp.language_code,
+        ideas,
+        results: resultLog,
+        added,
+        rejected,
+      };
+
+      return {
+        output: {
+          ...serpOpportunities,
+          serp_hits: items.length,
+          pool_size: poolEntries.length,
+        },
+        context: {
+          serpOpportunities,
+          ...(ctx.linkPool ? { linkPool: { ...ctx.linkPool, entries: poolEntries } } : {}),
+        },
+        model: selModel ?? resQ.model,
+        promptSnapshot: [resQ.promptSnapshot, selectSnapshot].filter(Boolean).join("\n\n=====\n\n"),
+        tokensIn,
+        tokensOut,
+      };
+    }
 
 
     case "S5_style_profile": {
@@ -1509,6 +1746,15 @@ function describeStepInput(
         pool_size: ctx.linkPool?.entries.length ?? 0,
         content_links: ctx.source?.contentLinks?.length ?? 0,
       };
+    case "S7c_serp_opportunities":
+      return {
+        market: marketInfo,
+        topic: ctx.source?.h1 ?? ctx.source?.title ?? null,
+        pool_size: ctx.linkPool?.entries.length ?? 0,
+        previous_serp_queries: ctx.serpGap?.queries ?? [],
+        sections: ctx.source?.sections.map((s) => s.heading) ?? [],
+      };
+
     case "S5_style_profile":
       return {
         market: marketInfo,
