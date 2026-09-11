@@ -100,7 +100,8 @@ export function buildTargetUrl(
   const missing = prefix.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
   const translated = prefix.map((s) => map[s.toLowerCase()]!);
-  return `${origin(market.domain)}/${[...translated, slugCandidate].join("/")}/`;
+  const segsOut = [...prefixSegments(market), ...translated, slugCandidate];
+  return `${origin(market.domain)}/${segsOut.join("/")}/`;
 }
 
 export function buildTargetUrls(
@@ -169,9 +170,10 @@ export function buildHubUrls(
   const missing = segs.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
   const translated = segs.map((s) => map[s.toLowerCase()]!);
+  const pre = prefixSegments(market);
   const out: string[] = [];
   for (let i = translated.length; i >= 1; i--) {
-    out.push(`${origin(market.domain)}/${translated.slice(0, i).join("/")}/`);
+    out.push(`${origin(market.domain)}/${[...pre, ...translated.slice(0, i)].join("/")}/`);
   }
   return out;
 }
