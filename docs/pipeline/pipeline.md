@@ -74,7 +74,11 @@ Ziel: Existiert die Seite im Zielmarkt bereits? Jede Teilentscheidung wird als N
 4. **Zweite Ebene:** Nur aus redaktionellen Seiten (Pfad enthält `magazin|magazine|magazyn|ratgeber|blog|guide|conseils|poradnik|advice`) werden weitere redaktionelle Links ausgelesen — **Linktext und Adresse, ohne Abruf**. Produkt- und Kategorieseiten liefern keine Links. Diese Einträge kommen als `origin: candidate`, `scope: source_candidate`, `fetched: false` in den Vorrat und sind bewusst **nicht direkt verwendbar**.
 5. Unter den belegten Zieleinträgen wird erneut nach dem Slug gesucht; ein Treffer wird geprüft.
 
-**Stufe 3 — Slug-Kandidaten live prüfen.** Der DE-Pfad wird segmentweise über `path_map` + abgeleitete Karte übersetzt, das letzte Segment durch jeden Slug-Kandidaten ersetzt, jede Adresse geprüft, bis eine besteht. Fehlt ein Segment in der Pfadübersetzung, wird das mit Namen der fehlenden Segmente gemeldet.
+**Stufe 3 — Slug-Kandidaten live prüfen.** Der DE-Pfad wird segmentweise übersetzt (Reihenfolge: gepflegte `path_map` des Markts, dann gelerntes Pfadverzeichnis `market_paths`, dann aus hreflang abgeleitete Paare), das Sprachpräfix des Markts (`markets.path_prefix`, z. B. `/fr`) vorangestellt, das letzte Segment durch jeden Slug-Kandidaten ersetzt und jede Adresse geprüft.
+
+Fehlen Segmente, wird zuerst der Prompt `translate_path_segment` befragt: er nennt bis zu drei Zielsegmente je Lücke. Jede Kombination (max. 9) wird als Verzeichnis-Adresse live geprüft; nur eine Adresse mit HTTP 200 wird übernommen und dauerhaft als `origin: verified` in `market_paths` gespeichert. Bleibt die Lücke bestehen, bricht der Schritt **nicht** ab: die Slug-Prüfung entfällt und das Ergebnis lautet `NOT_IN_INDEX`.
+
+Alle in Stufe 2b abgeleiteten Segmentpaare werden zusätzlich als `origin: hreflang` in `market_paths` gespeichert — das Verzeichnis wird mit jedem Lauf vollständiger.
 
 **Status:** `EXISTS` (Adresse bestanden) · `VERIFIED_404` (mindestens eine Prüfung meldete 404) · `NOT_IN_INDEX` (nichts bestanden, kein 404 nachweisbar). Bei `EXISTS` wird die Zielseite zusätzlich vollständig extrahiert.
 
@@ -229,7 +233,21 @@ Zusätzlich lässt sich zu jedem Job ein **Prozess-Report** herunterladen (`job-
 | `link_pool` | Adresse, Linktext, Kurzbeschreibung, Typ, Herkunft, Quellseite, Abruf-Vermerk, Scope, HTTP-Status; eindeutig je Markt + Typ + Adresse, Lebensdauer 7 Tage |
 | `verified_links` | pro Job: Anker, geprüfte Zieladresse, HTTP-Status, Canonical-Ergebnis, Konfidenz |
 | `style_profiles` | ein Stilprofil je Markt und Content-Typ |
-| `markets` | Domain, Locale, Pfadübersetzung, Magazin-/Kategoriewurzel, Institutionen, verbotene Aussagen, Ansprache, Abstand zwischen Abrufen, Suchmuster |
+| `market_paths` | gelerntes Pfadverzeichnis je Markt: deutsches Segment → Zielsegment, Herkunft (`sitemap`, `hreflang`, `verified`, `manual`), Beleg-Adresse und HTTP-Status; eindeutig je Markt + Segment |
+| `markets` | Domain, Locale, Sprachpräfix (`path_prefix`), Pfadübersetzung, Magazin-/Kategoriewurzel, Institutionen, verbotene Aussagen, Ansprache, Abstand zwischen Abrufen, Suchmuster |
 | `prompt_templates` / `prompt_versions` | aktuelle Anweisungen und deren Versionshistorie |
 
 **KI-Zugriff** (`ai.server.ts`): Aufrufe laufen über das Lovable-Gateway. Modelle mit Präfix `openai/` nutzen die Responses-Schnittstelle im Streaming-Modus, alle anderen die Chat-Schnittstelle. Platzhalter `{{name}}` werden vor dem Absenden ersetzt (Objekte als eingerücktes JSON). JSON-Antworten werden auch aus Code-Blöcken oder umgebendem Text herausgelöst. Bei Fehlern wird bis zu dreimal mit wachsender Wartezeit wiederholt — außer bei erschöpftem Guthaben oder Zugriffsverweigerung. Verbrauchte Token werden je Schritt mitgeschrieben.
+
+---
+
+## Anhang · Pfadverzeichnis je Markt
+
+Statt einer handgepflegten Übersetzungstabelle führt jeder Markt ein Pfadverzeichnis (`market_paths`). Es wird auf vier Wegen gefüllt:
+
+1. **Sitemap-Import** (Admin → Märkte → „Aus Sitemaps importieren"): robots.txt beider Domains liefert die Sitemaps, bis zu 12 Dateien werden gelesen und die dort hinterlegten hreflang-Alternates zu Segmentpaaren verarbeitet (`origin: sitemap`).
+2. **hreflang-Ernte** aus S3/S7a (`origin: hreflang`).
+3. **Live bestätigte KI-Vorschläge** aus S3 Stufe 3 (`origin: verified`).
+4. **Manuelle Einträge** im Admin (`origin: manual`).
+
+Die gepflegte `path_map` des Markts hat weiterhin Vorrang; das Verzeichnis füllt Lücken.

@@ -436,3 +436,38 @@ Antworte ausschließlich als JSON: {"selected": [{"index": 1, "url": "...", "anc
 Suchergebnisse (Nummer, Titel, URL, Beschreibung):
 {{serp_results}}
 ```
+
+---
+
+## `translate_path_segment` · Pfadsegmente übersetzen
+
+Wird nur aufgerufen, wenn in S3 Stufe 3 Verzeichnissegmente fehlen. Die Vorschläge werden nie ungeprüft verwendet: jede daraus gebaute Verzeichnis-Adresse wird live abgerufen, und nur eine Adresse mit HTTP 200 wird gespeichert.
+
+- **Modell:** `google/gemini-3.7-flash` · **Temperatur:** 0.3 · **Max. Tokens:** 1000 · **Format:** JSON
+
+**System**
+
+```text
+Du bist SEO-Spezialist für internationale Onlineshops. Antworte ausschließlich mit gültigem JSON.
+```
+
+**User**
+
+```text
+Zielsprache: {{language}}. Zielland: {{country}}. Zieldomain: {{domain}}.
+Quell-URL: {{source_url}}
+
+Bereits bekannte Segmentpaare (deutsch → Zielsprache):
+{{known_pairs}}
+
+Fehlende deutsche URL-Verzeichnissegmente:
+{{segments}}
+
+Nenne je Segment bis zu 3 wahrscheinliche Verzeichnisnamen in der Zielsprache,
+so wie sie ein Tierbedarf-Onlineshop in der URL verwenden würde
+(Kleinbuchstaben, keine Akzente, Bindestriche statt Leerzeichen).
+Orientiere dich am Stil der bekannten Paare.
+
+Antworte nur mit JSON:
+{"segments":[{"de":"segment","candidates":["...","...","..."]}]}
+```
