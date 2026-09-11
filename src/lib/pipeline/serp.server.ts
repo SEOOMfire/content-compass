@@ -147,12 +147,14 @@ interface DfsResponse {
   }[];
 }
 
+type SerpTarget = ReturnType<typeof serpTarget>;
+
 async function runOne(
   query: string,
-  target: { location_code: number; language_code: string; host: string },
+  target: SerpTarget,
   signal: AbortSignal,
 ): Promise<SerpQueryResult> {
-  const keyword = buildKeyword(query, target.host);
+  const keyword = buildKeyword(query, target.site);
   const res = await fetch(ENDPOINT, {
     method: "POST",
     signal,
@@ -200,7 +202,10 @@ async function runOne(
     }))
     .filter((i) => {
       try {
-        return new URL(i.url).hostname.replace(/^www\./, "") === target.host;
+        const u = new URL(i.url);
+        if (u.hostname.replace(/^www\./, "") !== target.host) return false;
+        if (target.path_prefix && !u.pathname.startsWith(`${target.path_prefix}/`)) return false;
+        return true;
       } catch {
         return false;
       }
@@ -209,16 +214,26 @@ async function runOne(
 }
 
 /**
- * Bis zu 5 Abfragen parallel, hartes Gesamtbudget. Nicht rechtzeitig
- * beantwortete Abfragen werden als „skipped" zurückgegeben.
+ * Abfragen parallel, hartes Gesamtbudget. Nicht rechtzeitig beantwortete
+ * Abfragen werden als „skipped" zurückgegeben.
  */
 export async function runSerpQueries(
   queries: string[],
   market: SerpMarket,
-  opts: { timeoutMs?: number } = {},
-): Promise<{ results: SerpQueryResult[]; location_code: number; language_code: string; host: string }> {
+  opts: { timeoutMs?: number; maxQueries?: number } = {},
+): Promise<{
+  results: SerpQueryResult[];
+  location_code: number;
+  language_code: string;
+  host: string;
+  site: string;
+  path_prefix: string;
+}> {
   const target = serpTarget(market);
-  const list = queries.map((q) => q.trim()).filter(Boolean).slice(0, SERP_MAX_QUERIES);
+  const list = queries
+    .map((q) => q.trim())
+    .filter(Boolean)
+    .slice(0, opts.maxQueries ?? SERP_MAX_QUERIES);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? SERP_TOTAL_TIMEOUT_MS);
   try {
@@ -232,7 +247,7 @@ export async function runSerpQueries(
       const aborted = err?.name === "AbortError" || controller.signal.aborted;
       return {
         query,
-        keyword: buildKeyword(query, target.host),
+        keyword: buildKeyword(query, target.site),
         status: aborted ? ("skipped" as const) : ("error" as const),
         items: [],
         error: aborted ? "Zeitbudget von 5 Minuten überschritten." : (err?.message ?? "Fehler"),
@@ -241,5 +256,6 @@ export async function runSerpQueries(
     return { results, ...target };
   } finally {
     clearTimeout(timer);
+
   }
 }
