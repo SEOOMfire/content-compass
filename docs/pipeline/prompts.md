@@ -18,10 +18,12 @@ Platzhalter in geschweiften Klammern werden vor dem Absenden durch echte Werte e
 | S12 · QA | `qa` | google/gemini-3.7-flash | 0,2 | 4000 | JSON |
 | S7b · SERP-Suchanfragen | `serp_gap_queries` | google/gemini-3.7-flash | 0,4 | 1500 | JSON |
 | S7b · SERP-Treffer auswählen | `serp_gap_select` | google/gemini-3.7-flash | 0,2 | 2000 | JSON |
+| S7c · SERP-Linkchancen | `serp_opportunity_queries` | google/gemini-3.7-flash | 0,4 | 2000 | JSON |
 
 S1, S3, S7a, S7, S9 und S13 arbeiten ohne KI.
 
-Die beiden S7b-Prompts stehen am Ende dieses Dokuments.
+Die S7b- und S7c-Prompts stehen am Ende dieses Dokuments (S7c nutzt für die Auswahl der Treffer ebenfalls `serp_gap_select`).
+
 
 ---
 
