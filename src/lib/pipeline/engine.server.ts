@@ -292,6 +292,7 @@ export async function runStep(
       const slug = ctx.slug;
       if (!slug) throw new Error("Schritt S2 muss zuerst laufen.");
       const hint = hreflangHint(source.hreflang, market.locale);
+      const learnedMap = await loadMarketPathMap(market.id);
       const evidence: { step: string; detail: string }[] = [];
       const checked: { url: string; status: number }[] = [];
       let found: string | null = null;
@@ -315,7 +316,7 @@ export async function runStep(
         const hub = await fetchHubEntries(
           hubMarket(market),
           job.source_url,
-          ctx.derivedPathMap ?? {},
+          { ...learnedMap, ...(ctx.derivedPathMap ?? {}) },
         );
         hubEntries = hub.entries;
         hubUrl = hub.hub_url;
@@ -351,7 +352,7 @@ export async function runStep(
       // Liefert belegte Ziel-URLs und eine abgeleitete Pfadübersetzung, wenn
       // market.path_map Lücken hat (z. B. „gesundheit" → „health").
       let harvest = ctx.hreflangHarvest ?? null;
-      let derivedMap = { ...(ctx.derivedPathMap ?? {}) };
+      let derivedMap = { ...learnedMap, ...(ctx.derivedPathMap ?? {}) };
       if (!found) {
         if (!harvest) {
           const res = await harvestHreflangEquivalents(source.contentLinks ?? [], hubMarket(market));
@@ -364,6 +365,16 @@ export async function runStep(
           };
         }
         derivedMap = { ...harvest.derived_path_map, ...derivedMap };
+        if (Object.keys(harvest.derived_path_map).length) {
+          await saveMarketPaths(
+            market.id,
+            Object.entries(harvest.derived_path_map).map(([de_segment, target_segment]) => ({
+              de_segment,
+              target_segment,
+              origin: "hreflang" as const,
+            })),
+          );
+        }
         evidence.push({
           step: "hreflang_pool",
           detail:
@@ -397,6 +408,11 @@ export async function runStep(
 
       // Stufe 3 · Slug-Kandidaten über path_map (+ abgeleitete Pfade), live geprüft
       if (!found) {
+        if (missingSegments(job.source_url, market as never, derivedMap).length) {
+          const resolved = await resolveMissingSegments(market, job.source_url, derivedMap);
+          for (const line of resolved.log) evidence.push({ step: "pfadverzeichnis", detail: line });
+          derivedMap = { ...derivedMap, ...resolved.map };
+        }
         try {
           const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates, derivedMap);
           for (const url of urls) {
@@ -411,8 +427,12 @@ export async function runStep(
           }
         } catch (e) {
           if (!(e instanceof PathMapError)) throw e;
-          evidence.push({ step: "slug", detail: e.message });
-          if (!checked.length) throw e;
+          // Pfadlücken beenden den Job nicht mehr: das Ergebnis ist dann
+          // "Zielseite nicht auffindbar", die Pipeline plant eine Neuerstellung.
+          evidence.push({
+            step: "slug",
+            detail: `${e.message} Schritt läuft ohne Slug-Prüfung weiter.`,
+          });
         }
       }
 
@@ -496,7 +516,11 @@ export async function runStep(
           harvested_at: new Date().toISOString(),
         };
       }
-      const derivedMap = { ...harvest.derived_path_map, ...(ctx.derivedPathMap ?? {}) };
+      const derivedMap = {
+        ...(await loadMarketPathMap(market.id)),
+        ...harvest.derived_path_map,
+        ...(ctx.derivedPathMap ?? {}),
+      };
       const pool = await buildLinkPool(hm, job.source_url, derivedMap);
       const known = new Set(pool.entries.map((e) => e.url));
       for (const e of harvest.entries) {
