@@ -11,6 +11,7 @@ import {
   hreflangHint,
   lastPathSegment,
   matchHreflang,
+  missingSegments,
   PathMapError,
 } from "../src/lib/pipeline/paths";
 import {
@@ -365,5 +366,37 @@ describe("17 · S7b SERP-Lückenanalyse", () => {
     expect(() =>
       serpTarget({ domain: "fressnapf.hu", locale: "hu-HU", language: "Ungarisch", country: "Ungarn" }),
     ).toThrow();
+  });
+});
+
+describe("18 · Pfadpräfix und Pfadlücken", () => {
+  const chFr = {
+    domain: "fressnapf.ch",
+    locale: "fr-CH",
+    path_prefix: "/fr",
+    path_map: { magazin: "magazine", terra: "terra", weitere: "autres" },
+  };
+
+  test("Sprachpräfix wird der Zieladresse vorangestellt", () => {
+    expect(
+      buildTargetUrl(
+        "https://www.fressnapf.de/magazin/terra/weitere/gottesanbeterin/",
+        chFr,
+        "mante-religieuse",
+      ),
+    ).toBe("https://fressnapf.ch/fr/magazine/terra/autres/mante-religieuse/");
+  });
+
+  test("fehlende Segmente werden benannt statt geraten", () => {
+    const market = { ...chFr, path_map: { magazin: "magazine" } };
+    expect(
+      missingSegments("https://www.fressnapf.de/magazin/terra/weitere/gottesanbeterin/", market),
+    ).toEqual(["terra", "weitere"]);
+    expect(
+      missingSegments("https://www.fressnapf.de/magazin/terra/weitere/gottesanbeterin/", market, {
+        terra: "terra",
+        weitere: "autres",
+      }),
+    ).toEqual([]);
   });
 });

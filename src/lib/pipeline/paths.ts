@@ -5,6 +5,8 @@ export interface MarketPathInfo {
   locale?: string | null;
   language?: string | null;
   path_map?: unknown;
+  /** Sprachpräfix des Markts, z. B. "/fr" bei fressnapf.ch. */
+  path_prefix?: string | null;
 }
 
 export function pathSegments(url: string): string[] {
@@ -59,6 +61,29 @@ function origin(domain: string): string {
 }
 
 /**
+ * Sprachpräfix des Markts als Segmentliste (z. B. "/fr" → ["fr"]).
+ * Märkte ohne Präfix liefern eine leere Liste.
+ */
+export function prefixSegments(market: MarketPathInfo): string[] {
+  const raw = (market.path_prefix ?? "").trim();
+  if (!raw || raw === "/") return [];
+  return raw.split("/").filter(Boolean);
+}
+
+/** DE-Pfadsegmente ohne letztes Segment, die in keiner Karte stehen. */
+export function missingSegments(
+  sourceUrl: string,
+  market: MarketPathInfo,
+  extraMap: Record<string, string> = {},
+): string[] {
+  const map = mergedMap(market, extraMap);
+  return pathSegments(sourceUrl)
+    .slice(0, -1)
+    .filter((s) => !map[s.toLowerCase()]);
+}
+
+
+/**
  * Übersetzt den kompletten DE-Pfad segmentweise über market.path_map und ersetzt
  * nur das letzte Segment durch den Slug-Kandidaten (P1-3).
  */
@@ -75,7 +100,8 @@ export function buildTargetUrl(
   const missing = prefix.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
   const translated = prefix.map((s) => map[s.toLowerCase()]!);
-  return `${origin(market.domain)}/${[...translated, slugCandidate].join("/")}/`;
+  const segsOut = [...prefixSegments(market), ...translated, slugCandidate];
+  return `${origin(market.domain)}/${segsOut.join("/")}/`;
 }
 
 export function buildTargetUrls(
@@ -144,9 +170,10 @@ export function buildHubUrls(
   const missing = segs.filter((s) => !map[s.toLowerCase()]);
   if (missing.length) throw new PathMapError(missing);
   const translated = segs.map((s) => map[s.toLowerCase()]!);
+  const pre = prefixSegments(market);
   const out: string[] = [];
   for (let i = translated.length; i >= 1; i--) {
-    out.push(`${origin(market.domain)}/${translated.slice(0, i).join("/")}/`);
+    out.push(`${origin(market.domain)}/${[...pre, ...translated.slice(0, i)].join("/")}/`);
   }
   return out;
 }

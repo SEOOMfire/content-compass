@@ -41,8 +41,11 @@ import {
   hreflangHint,
   lastPathSegment,
   matchHreflang,
+  missingSegments,
+  prefixSegments,
   PathMapError,
 } from "./paths";
+import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkLocalizedTable } from "./tables";
 import { buildSectionInputs } from "./plan";
@@ -132,9 +135,87 @@ function hubMarket(market: MarketRow): HubMarket {
     path_map: market.path_map,
     magazine_root: market.magazine_root,
     category_root: market.category_root,
+    path_prefix: (market["path_prefix"] as string | null) ?? null,
     crawl_delay_ms: (market["crawl_delay_ms"] as number | null) ?? null,
     search_url_pattern: (market["search_url_pattern"] as string | null) ?? null,
   };
+}
+
+/**
+ * Fehlende Pfadsegmente auflösen: die KI schlägt Übersetzungen vor, jede
+ * Kombination wird als Verzeichnis-Adresse live geprüft und nur bestätigte
+ * Segmente werden dauerhaft im Pfadverzeichnis gespeichert.
+ */
+async function resolveMissingSegments(
+  market: MarketRow,
+  sourceUrl: string,
+  known: Record<string, string>,
+): Promise<{ map: Record<string, string>; log: string[] }> {
+  const missing = missingSegments(sourceUrl, market as never, known);
+  const log: string[] = [];
+  if (!missing.length) return { map: {}, log };
+
+  let proposals: Record<string, string[]> = {};
+  try {
+    const tpl = await loadTemplate("translate_path_segment");
+    const res = await runPrompt<unknown>(tpl, {
+      segments: missing,
+      language: market.language,
+      country: market.country,
+      domain: market.domain,
+      known_pairs: known,
+      source_url: sourceUrl,
+    });
+    const data = res.data as { segments?: { de: string; candidates?: string[] }[] } | undefined;
+    for (const item of data?.segments ?? []) {
+      if (typeof item?.de === "string" && Array.isArray(item.candidates)) {
+        proposals[item.de.toLowerCase()] = item.candidates
+          .filter((c): c is string => typeof c === "string" && Boolean(c.trim()))
+          .slice(0, 3);
+      }
+    }
+  } catch (e) {
+    log.push(`Segmentvorschlag nicht möglich: ${(e as Error).message}`);
+    proposals = {};
+  }
+  if (!Object.keys(proposals).length) return { map: {}, log };
+
+  const base = /^https?:\/\//i.test(market.domain) ? market.domain.replace(/\/+$/, "") : `https://${market.domain}`;
+  const segs = sourceUrl.replace(/^https?:\/\/[^/]+/, "").split("/").filter(Boolean).slice(0, -1);
+  const pre = prefixSegments(market as never);
+
+  // Kombinationen begrenzen (max. 9 Prüfungen).
+  const combos: Record<string, string>[] = [{}];
+  for (const seg of missing) {
+    const cands = proposals[seg] ?? [];
+    if (!cands.length) return { map: {}, log: [...log, `Keine Vorschläge für „${seg}".`] };
+    const next: Record<string, string>[] = [];
+    for (const c of combos) for (const cand of cands) next.push({ ...c, [seg]: cand });
+    combos.splice(0, combos.length, ...next.slice(0, 9));
+  }
+
+  for (const combo of combos) {
+    const map = { ...known, ...combo };
+    const translated = segs.map((x) => map[x.toLowerCase()] ?? null);
+    if (translated.some((t) => t === null)) continue;
+    const url = `${base}/${[...pre, ...(translated as string[])].join("/")}/`;
+    const v = await verifyUrl(url);
+    log.push(`Segmentprüfung ${url} → HTTP ${v.http_status}`);
+    if (v.ok) {
+      await saveMarketPaths(
+        market.id,
+        Object.entries(combo).map(([de_segment, target_segment]) => ({
+          de_segment,
+          target_segment,
+          origin: "verified" as const,
+          sample_url: url,
+          http_status: v.http_status,
+        })),
+      );
+      return { map: combo, log };
+    }
+  }
+  return { map: {}, log };
 }
 
 export async function runStep(
@@ -211,6 +292,7 @@ export async function runStep(
       const slug = ctx.slug;
       if (!slug) throw new Error("Schritt S2 muss zuerst laufen.");
       const hint = hreflangHint(source.hreflang, market.locale);
+      const learnedMap = await loadMarketPathMap(market.id);
       const evidence: { step: string; detail: string }[] = [];
       const checked: { url: string; status: number }[] = [];
       let found: string | null = null;
@@ -234,7 +316,7 @@ export async function runStep(
         const hub = await fetchHubEntries(
           hubMarket(market),
           job.source_url,
-          ctx.derivedPathMap ?? {},
+          { ...learnedMap, ...(ctx.derivedPathMap ?? {}) },
         );
         hubEntries = hub.entries;
         hubUrl = hub.hub_url;
@@ -270,7 +352,7 @@ export async function runStep(
       // Liefert belegte Ziel-URLs und eine abgeleitete Pfadübersetzung, wenn
       // market.path_map Lücken hat (z. B. „gesundheit" → „health").
       let harvest = ctx.hreflangHarvest ?? null;
-      let derivedMap = { ...(ctx.derivedPathMap ?? {}) };
+      let derivedMap = { ...learnedMap, ...(ctx.derivedPathMap ?? {}) };
       if (!found) {
         if (!harvest) {
           const res = await harvestHreflangEquivalents(source.contentLinks ?? [], hubMarket(market));
@@ -283,6 +365,16 @@ export async function runStep(
           };
         }
         derivedMap = { ...harvest.derived_path_map, ...derivedMap };
+        if (Object.keys(harvest.derived_path_map).length) {
+          await saveMarketPaths(
+            market.id,
+            Object.entries(harvest.derived_path_map).map(([de_segment, target_segment]) => ({
+              de_segment,
+              target_segment,
+              origin: "hreflang" as const,
+            })),
+          );
+        }
         evidence.push({
           step: "hreflang_pool",
           detail:
@@ -316,6 +408,11 @@ export async function runStep(
 
       // Stufe 3 · Slug-Kandidaten über path_map (+ abgeleitete Pfade), live geprüft
       if (!found) {
+        if (missingSegments(job.source_url, market as never, derivedMap).length) {
+          const resolved = await resolveMissingSegments(market, job.source_url, derivedMap);
+          for (const line of resolved.log) evidence.push({ step: "pfadverzeichnis", detail: line });
+          derivedMap = { ...derivedMap, ...resolved.map };
+        }
         try {
           const urls = buildTargetUrls(job.source_url, market, slug.slug_candidates, derivedMap);
           for (const url of urls) {
@@ -330,8 +427,12 @@ export async function runStep(
           }
         } catch (e) {
           if (!(e instanceof PathMapError)) throw e;
-          evidence.push({ step: "slug", detail: e.message });
-          if (!checked.length) throw e;
+          // Pfadlücken beenden den Job nicht mehr: das Ergebnis ist dann
+          // "Zielseite nicht auffindbar", die Pipeline plant eine Neuerstellung.
+          evidence.push({
+            step: "slug",
+            detail: `${e.message} Schritt läuft ohne Slug-Prüfung weiter.`,
+          });
         }
       }
 
@@ -415,7 +516,11 @@ export async function runStep(
           harvested_at: new Date().toISOString(),
         };
       }
-      const derivedMap = { ...harvest.derived_path_map, ...(ctx.derivedPathMap ?? {}) };
+      const derivedMap = {
+        ...(await loadMarketPathMap(market.id)),
+        ...harvest.derived_path_map,
+        ...(ctx.derivedPathMap ?? {}),
+      };
       const pool = await buildLinkPool(hm, job.source_url, derivedMap);
       const known = new Set(pool.entries.map((e) => e.url));
       for (const e of harvest.entries) {
