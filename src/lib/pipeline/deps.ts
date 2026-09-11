@@ -19,7 +19,9 @@ export function dependencyBlocker(stepKey: string, ctx: JobContext): string | nu
     case "S7a_link_pool":
       return needSource();
     case "S7b_serp_gap":
-      return needPool();
+    case "S7c_serp_opportunities":
+      return ctx.source ? needPool() : needSource();
+
     case "S5_style_profile":
       return ctx.linkPool?.siblings?.length
         ? null
