@@ -5,6 +5,8 @@ export interface MarketPathInfo {
   locale?: string | null;
   language?: string | null;
   path_map?: unknown;
+  /** Sprachpräfix des Markts, z. B. "/fr" bei fressnapf.ch. */
+  path_prefix?: string | null;
 }
 
 export function pathSegments(url: string): string[] {
