@@ -1746,6 +1746,15 @@ function describeStepInput(
         pool_size: ctx.linkPool?.entries.length ?? 0,
         content_links: ctx.source?.contentLinks?.length ?? 0,
       };
+    case "S7c_serp_opportunities":
+      return {
+        market: marketInfo,
+        topic: ctx.source?.h1 ?? ctx.source?.title ?? null,
+        pool_size: ctx.linkPool?.entries.length ?? 0,
+        previous_serp_queries: ctx.serpGap?.queries ?? [],
+        sections: ctx.source?.sections.map((s) => s.heading) ?? [],
+      };
+
     case "S5_style_profile":
       return {
         market: marketInfo,
