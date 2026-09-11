@@ -61,6 +61,29 @@ function origin(domain: string): string {
 }
 
 /**
+ * Sprachpräfix des Markts als Segmentliste (z. B. "/fr" → ["fr"]).
+ * Märkte ohne Präfix liefern eine leere Liste.
+ */
+export function prefixSegments(market: MarketPathInfo): string[] {
+  const raw = (market.path_prefix ?? "").trim();
+  if (!raw || raw === "/") return [];
+  return raw.split("/").filter(Boolean);
+}
+
+/** DE-Pfadsegmente ohne letztes Segment, die in keiner Karte stehen. */
+export function missingSegments(
+  sourceUrl: string,
+  market: MarketPathInfo,
+  extraMap: Record<string, string> = {},
+): string[] {
+  const map = mergedMap(market, extraMap);
+  return pathSegments(sourceUrl)
+    .slice(0, -1)
+    .filter((s) => !map[s.toLowerCase()]);
+}
+
+
+/**
  * Übersetzt den kompletten DE-Pfad segmentweise über market.path_map und ersetzt
  * nur das letzte Segment durch den Slug-Kandidaten (P1-3).
  */
