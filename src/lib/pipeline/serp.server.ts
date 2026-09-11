@@ -10,6 +10,8 @@
 const ENDPOINT = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced";
 
 export const SERP_MAX_QUERIES = 5;
+/** S7c · zusätzliche Abfragen für Linkchancen. */
+export const SERP_MAX_OPPORTUNITY_QUERIES = 10;
 export const SERP_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
 /** Nur die erste Ergebnisseite. */
 export const SERP_DEPTH = 10;
@@ -19,7 +21,10 @@ export interface SerpMarket {
   locale: string | null;
   language: string;
   country: string;
+  /** Sprachverzeichnis des Markts, z. B. "/fr" – fließt in site: ein. */
+  path_prefix?: string | null;
 }
+
 
 export interface SerpItem {
   url: string;
