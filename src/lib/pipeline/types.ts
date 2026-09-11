@@ -263,6 +263,26 @@ export interface JobContext {
     added: { url: string; anchor_text: string | null; intent: string | null }[];
     rejected: { url: string; reason: string }[];
   };
+  /** S7c · zusätzliche Linkchancen über DataForSEO (bis zu 10 Abfragen). */
+  serpOpportunities?: {
+    ran_at: string;
+    site: string;
+    host: string;
+    path_prefix: string;
+    location_code: number;
+    language_code: string;
+    ideas: { topic: string; query: string; reason?: string }[];
+    results: {
+      query: string;
+      keyword: string;
+      status: "ok" | "skipped" | "error";
+      hits: number;
+      error?: string;
+    }[];
+    added: { url: string; anchor_text: string | null; intent: string | null }[];
+    rejected: { url: string; reason: string }[];
+  };
+
   /** Protokoll der zweistufigen Kandidatensuche (S7). */
   linkSearchLog?: SearchLogEntry[];
   /** Poolkandidaten, die die HTTP-Prüfung in S9 nicht bestanden haben. */
