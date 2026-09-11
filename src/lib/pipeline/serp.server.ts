@@ -86,10 +86,24 @@ export function marketHost(market: SerpMarket): string {
   }
 }
 
+/** Sprachverzeichnis normalisiert, z. B. "fr" → "/fr"; ohne Präfix leer. */
+export function marketPathPrefix(market: SerpMarket): string {
+  const raw = (market.path_prefix ?? "").trim();
+  const segs = raw.split("/").filter(Boolean);
+  return segs.length ? `/${segs.join("/")}` : "";
+}
+
+/** site:-Operand inkl. Sprachverzeichnis, z. B. "fressnapf.ch/fr". */
+export function siteOperand(market: SerpMarket): string {
+  return `${marketHost(market)}${marketPathPrefix(market)}`;
+}
+
 export function serpTarget(market: SerpMarket): {
   location_code: number;
   language_code: string;
   host: string;
+  site: string;
+  path_prefix: string;
 } {
   const locale = market.locale ?? "";
   const location = LOCATION_CODES[locale];
@@ -99,14 +113,21 @@ export function serpTarget(market: SerpMarket): {
       `Für den Markt „${market.country} / ${market.language}" ist kein SERP-Standort hinterlegt (locale: ${locale || "leer"}).`,
     );
   }
-  return { location_code: location, language_code: language, host: marketHost(market) };
+  return {
+    location_code: location,
+    language_code: language,
+    host: marketHost(market),
+    site: siteOperand(market),
+    path_prefix: marketPathPrefix(market),
+  };
 }
 
-/** Suchanfrage immer auf die Zieldomain einschränken. */
-export function buildKeyword(query: string, host: string): string {
+/** Suchanfrage immer auf die Zieldomain (inkl. Sprachverzeichnis) einschränken. */
+export function buildKeyword(query: string, site: string): string {
   const cleaned = query.replace(/site:\S+/gi, "").trim();
-  return `site:${host} ${cleaned}`.trim();
+  return `site:${site} ${cleaned}`.trim();
 }
+
 
 interface DfsResponse {
   status_code?: number;
