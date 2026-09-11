@@ -41,8 +41,11 @@ import {
   hreflangHint,
   lastPathSegment,
   matchHreflang,
+  missingSegments,
+  prefixSegments,
   PathMapError,
 } from "./paths";
+import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkLocalizedTable } from "./tables";
 import { buildSectionInputs } from "./plan";
@@ -132,9 +135,87 @@ function hubMarket(market: MarketRow): HubMarket {
     path_map: market.path_map,
     magazine_root: market.magazine_root,
     category_root: market.category_root,
+    path_prefix: (market["path_prefix"] as string | null) ?? null,
     crawl_delay_ms: (market["crawl_delay_ms"] as number | null) ?? null,
     search_url_pattern: (market["search_url_pattern"] as string | null) ?? null,
   };
+}
+
+/**
+ * Fehlende Pfadsegmente auflösen: die KI schlägt Übersetzungen vor, jede
+ * Kombination wird als Verzeichnis-Adresse live geprüft und nur bestätigte
+ * Segmente werden dauerhaft im Pfadverzeichnis gespeichert.
+ */
+async function resolveMissingSegments(
+  market: MarketRow,
+  sourceUrl: string,
+  known: Record<string, string>,
+): Promise<{ map: Record<string, string>; log: string[] }> {
+  const missing = missingSegments(sourceUrl, market as never, known);
+  const log: string[] = [];
+  if (!missing.length) return { map: {}, log };
+
+  let proposals: Record<string, string[]> = {};
+  try {
+    const tpl = await loadTemplate("translate_path_segment");
+    const res = await runPrompt<unknown>(tpl, {
+      segments: missing,
+      language: market.language,
+      country: market.country,
+      domain: market.domain,
+      known_pairs: known,
+      source_url: sourceUrl,
+    });
+    const data = res.data as { segments?: { de: string; candidates?: string[] }[] } | undefined;
+    for (const item of data?.segments ?? []) {
+      if (typeof item?.de === "string" && Array.isArray(item.candidates)) {
+        proposals[item.de.toLowerCase()] = item.candidates
+          .filter((c): c is string => typeof c === "string" && Boolean(c.trim()))
+          .slice(0, 3);
+      }
+    }
+  } catch (e) {
+    log.push(`Segmentvorschlag nicht möglich: ${(e as Error).message}`);
+    proposals = {};
+  }
+  if (!Object.keys(proposals).length) return { map: {}, log };
+
+  const base = /^https?:\/\//i.test(market.domain) ? market.domain.replace(/\/+$/, "") : `https://${market.domain}`;
+  const segs = sourceUrl.replace(/^https?:\/\/[^/]+/, "").split("/").filter(Boolean).slice(0, -1);
+  const pre = prefixSegments(market as never);
+
+  // Kombinationen begrenzen (max. 9 Prüfungen).
+  const combos: Record<string, string>[] = [{}];
+  for (const seg of missing) {
+    const cands = proposals[seg] ?? [];
+    if (!cands.length) return { map: {}, log: [...log, `Keine Vorschläge für „${seg}".`] };
+    const next: Record<string, string>[] = [];
+    for (const c of combos) for (const cand of cands) next.push({ ...c, [seg]: cand });
+    combos.splice(0, combos.length, ...next.slice(0, 9));
+  }
+
+  for (const combo of combos) {
+    const map = { ...known, ...combo };
+    const translated = segs.map((x) => map[x.toLowerCase()] ?? null);
+    if (translated.some((t) => t === null)) continue;
+    const url = `${base}/${[...pre, ...(translated as string[])].join("/")}/`;
+    const v = await verifyUrl(url);
+    log.push(`Segmentprüfung ${url} → HTTP ${v.http_status}`);
+    if (v.ok) {
+      await saveMarketPaths(
+        market.id,
+        Object.entries(combo).map(([de_segment, target_segment]) => ({
+          de_segment,
+          target_segment,
+          origin: "verified" as const,
+          sample_url: url,
+          http_status: v.http_status,
+        })),
+      );
+      return { map: combo, log };
+    }
+  }
+  return { map: {}, log };
 }
 
 export async function runStep(
