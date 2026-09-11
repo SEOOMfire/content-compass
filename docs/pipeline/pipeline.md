@@ -132,6 +132,21 @@ Läuft direkt nach S7a und setzt einen gefüllten Link-Pool voraus. Ziel: Artike
 
 ---
 
+## S7c · SERP-Linkchancen (DataForSEO)
+
+Eigene Stufe direkt nach S7b, ebenfalls mit gefülltem Link-Pool als Voraussetzung. Ziel: zusätzliche Linkziele finden, von denen wir nicht wissen, ob es sie im Zielmarkt gibt — die aber inhaltlich naheliegen.
+
+1. **Chancen erkennen (KI, Prompt `serp_opportunity_queries`).** Eingaben: Thema, Gliederung, die Abschnittstexte der deutschen Quelle (gekürzt), bis zu 80 bekannte Pool-Adressen und die bereits in S7b gestellten Suchanfragen. Die KI überlegt je Abschnitt, wo ein interner Link sinnvoll wäre, und liefert maximal **10** Vorschläge mit Thema, Suchbegriff in der Zielsprache und Begründung. Wiederholungen aus S7b sind ausgeschlossen.
+2. **SERP-Abfrage.** Jeder Suchbegriff geht als `site:<domain><sprachverzeichnis> <suchbegriff>` an DataForSEO (erste Ergebnisseite, `depth: 10`). Hat der Markt ein Sprachverzeichnis (z. B. `/fr`), wird es in die `site:`-Einschränkung übernommen und Treffer außerhalb dieses Verzeichnisses werden verworfen. Land und Sprache stammen aus dem `locale` des Markts. Hartes Gesamtbudget: 5 Minuten, offene Anfragen werden als `skipped` protokolliert. Fremde Hosts und bereits bekannte Adressen fallen raus (max. 60 Kandidaten).
+3. **Auswahl (KI, Prompt `serp_gap_select`).** Wie in S7b: nur redaktionell passende Seiten, keine Produkt-, Kategorie- oder Serviceseiten.
+4. **Prüfung und Übernahme.** Jede ausgewählte Adresse wird per GET geprüft (HTTP 200, Canonical, kein Soft-404) und nur dann mit `origin = serp`, `scope = target`, `fetched = true` und `source_page = serp-chance:<site>` in `link_pool` gespeichert.
+
+**Ergebnis im Kontext:** `serpOpportunities` (Chancenliste, site-Operand inkl. Sprachverzeichnis, Trefferprotokoll, übernommene und abgelehnte Adressen) sowie der erweiterte `linkPool`.
+
+---
+
+
+
 
 
 ## S5 · Stilprofil
