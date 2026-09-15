@@ -9,6 +9,7 @@ import {
   runFromStepFn,
   exportJobReport,
   exportPromptVars,
+  exportFullJobDocs,
 } from "@/lib/pipeline.functions";
 import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
@@ -143,6 +144,19 @@ function JobDetail() {
     }
   }
 
+  async function downloadFullDocs() {
+    setBusy("full");
+    try {
+      const { filename, markdown } = await exportFullJobDocs({ data: { jobId } });
+      downloadMarkdown(filename, markdown);
+      toast.success("Gesamtdokumentation heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export fehlgeschlagen");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const ctx = (job.data?.context ?? {}) as Record<string, unknown>;
   const target = ctx["target"] as { status?: string; url?: string | null } | undefined;
   const exportMd = ctx["exportMarkdown"] as string | undefined;
@@ -174,6 +188,10 @@ function JobDetail() {
           <Button variant="outline" onClick={downloadVars} disabled={busy !== null}>
             <FileDown className="mr-2 h-4 w-4" />
             {busy === "vars" ? "Erstelle…" : "Platzhalter (.md)"}
+          </Button>
+          <Button variant="outline" onClick={downloadFullDocs} disabled={busy !== null}>
+            <FileDown className="mr-2 h-4 w-4" />
+            {busy === "full" ? "Erstelle…" : "Gesamtdoku (.md)"}
           </Button>
           <Button onClick={() => runAll()} disabled={busy !== null}>
             <Play className="mr-2 h-4 w-4" /> Komplett ausführen
