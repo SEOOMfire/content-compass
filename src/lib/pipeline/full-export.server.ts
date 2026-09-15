@@ -1,6 +1,7 @@
 import pipelineDoc from "../../../docs/pipeline/pipeline.md?raw";
 import { buildJobReport } from "./report.server";
 import { buildPromptVarsReport } from "./prompt-vars.server";
+import { buildAllPromptsMarkdown } from "./prompts-export.server";
 
 /**
  * Gesamtdokumentation eines Jobs: Pipeline-Beschreibung, Prozess-Report und
