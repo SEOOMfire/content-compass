@@ -1520,6 +1520,13 @@ export async function runStep(
       const source = requireSource(ctx);
       const broken = ctx.brokenLinks ?? [];
       const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
+      // Harte Schlussprüfung: jede Tabelle der Quelle muss im Zieltext stehen.
+      const missingTables = missingTableIndices(bodyText, ctx.tables ?? []);
+      if (missingTables.length) {
+        throw new Error(
+          `Tabelle(n) ${missingTables.map((i) => i + 1).join(", ")} aus der Quelle fehlen im Zieltext. Bitte S10 und S11 erneut ausführen.`,
+        );
+      }
       const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
       const readingMinutes = Math.max(1, Math.round(targetWords / 200));
       // H1 nur ergänzen, wenn der Content selbst keine H1 enthält (#3).
