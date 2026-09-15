@@ -37,6 +37,15 @@ function tableToMarkdown(table: HTMLElement): string {
   return lines.join("\n");
 }
 
+function insideTable(node: HTMLElement): boolean {
+  let p = node.parentNode as HTMLElement | null;
+  while (p) {
+    if (p.tagName?.toLowerCase() === "table") return true;
+    p = p.parentNode as HTMLElement | null;
+  }
+  return false;
+}
+
 function sameHost(a: string, b: string): boolean {
   try {
     return new URL(a).hostname.replace(/^www\./, "") === new URL(b).hostname.replace(/^www\./, "");
@@ -97,14 +106,24 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
 
   const sections: SourceSection[] = [];
   let current: SourceSection = { heading: h1 ?? "Intro", level: 1, text: "" };
-  main.querySelectorAll("h1,h2,h3,p,li").forEach((node) => {
+  const tableHeadings: Record<number, string> = {};
+  let tableIdx = 0;
+  main.querySelectorAll("h1,h2,h3,p,li,table").forEach((node) => {
     const tag = node.tagName?.toLowerCase();
     if (tag === "h1" || tag === "h2" || tag === "h3") {
       if (current.text.trim()) sections.push(current);
       current = { heading: textOf(node), level: Number(tag[1]), text: "" };
+    } else if (tag === "table") {
+      tableHeadings[tableIdx] = current.heading;
+      current.text += (current.text ? "\n" : "") + `[TABELLE ${tableIdx}]`;
+      tableIdx++;
     } else {
+      // Inhalte innerhalb von Tabellen nicht doppelt als Fließtext erfassen.
+      if (insideTable(node)) return;
       const t = textOf(node);
-      if (t.length > 1) current.text += (current.text ? "\n" : "") + t;
+      // Ursprüngliche Formatierung festhalten: echte Listenpunkte als "- ",
+      // Absätze als eigene Zeile ohne Marker.
+      if (t.length > 1) current.text += (current.text ? "\n" : "") + (tag === "li" ? `- ${t}` : t);
     }
   });
   if (current.text.trim()) sections.push(current);
@@ -114,6 +133,7 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
   const tables: SourceTable[] = main.querySelectorAll("table").map((t, i) => ({
     index: i,
     markdown: tableToMarkdown(t),
+    ...(tableHeadings[i] ? { section_heading: tableHeadings[i] } : {}),
   }));
 
   const wordCount = sections.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
