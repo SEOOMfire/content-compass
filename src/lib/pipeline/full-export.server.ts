@@ -1,6 +1,7 @@
 import pipelineDoc from "../../../docs/pipeline/pipeline.md?raw";
 import { buildJobReport } from "./report.server";
 import { buildPromptVarsReport } from "./prompt-vars.server";
+import { buildAllPromptsMarkdown } from "./prompts-export.server";
 
 /**
  * Gesamtdokumentation eines Jobs: Pipeline-Beschreibung, Prozess-Report und
@@ -9,9 +10,10 @@ import { buildPromptVarsReport } from "./prompt-vars.server";
 export async function buildFullJobDocumentation(
   jobId: string,
 ): Promise<{ filename: string; markdown: string }> {
-  const [report, vars] = await Promise.all([
+  const [report, vars, prompts] = await Promise.all([
     buildJobReport(jobId),
     buildPromptVarsReport(jobId),
+    buildAllPromptsMarkdown(),
   ]);
 
   // Überschriften der Teildokumente eine Ebene tiefer einhängen.
@@ -22,11 +24,12 @@ export async function buildFullJobDocumentation(
   out.push("");
   out.push(`- **Erzeugt:** ${new Date().toISOString()}`);
   out.push("");
-  out.push("Diese Datei fasst drei Dokumente zusammen:");
+  out.push("Diese Datei fasst vier Dokumente zusammen:");
   out.push("");
   out.push("1. **Teil 1 – Pipeline-Beschreibung:** wie die Pipeline grundsätzlich arbeitet (aus `docs/pipeline/pipeline.md`).");
   out.push("2. **Teil 2 – Prozess-Report:** was in diesem konkreten Job passiert ist.");
   out.push("3. **Teil 3 – Prompt-Platzhalter:** welche Werte in diesem Job an die KI übergeben wurden.");
+  out.push("4. **Teil 4 – Prompt-Vorlagen:** alle hinterlegten System- und User-Prompts im aktuellen Stand.");
   out.push("");
   out.push("---");
   out.push("");
@@ -46,6 +49,13 @@ export async function buildFullJobDocumentation(
   out.push("");
   out.push(demote(vars.markdown.trim()));
   out.push("");
+  out.push("---");
+  out.push("");
+  out.push("# Teil 4 · Prompt-Vorlagen (aktueller Stand)");
+  out.push("");
+  out.push(demote(prompts.markdown.trim()));
+  out.push("");
+
 
   return { filename: `job-${jobId}-gesamtdokumentation.md`, markdown: out.join("\n") };
 }
