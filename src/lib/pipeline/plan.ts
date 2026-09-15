@@ -124,6 +124,18 @@ export function buildSectionInputs(args: {
     });
   }
 
+  // Keine Tabelle darf verloren gehen: Rest an den letzten inhaltlichen Abschnitt.
+  const leftover = sorted.filter((t) => !assigned.has(t.index));
+  if (leftover.length) {
+    const target = [...out].reverse().find((s) => !s.is_toc && s.action !== "streichen") ?? out[0];
+    if (target) {
+      target.table_markdown = [target.table_markdown, ...leftover.map((t) => t.markdown)]
+        .filter(Boolean)
+        .join("\n\n");
+      target.has_table = true;
+    }
+  }
+
   if (unmatched.length) {
     throw new PlanMappingError(
       `Kein Quellabschnitt zu diesen Planüberschriften gefunden: ${unmatched
