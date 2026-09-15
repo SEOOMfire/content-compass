@@ -10,9 +10,10 @@ import { buildAllPromptsMarkdown } from "./prompts-export.server";
 export async function buildFullJobDocumentation(
   jobId: string,
 ): Promise<{ filename: string; markdown: string }> {
-  const [report, vars] = await Promise.all([
+  const [report, vars, prompts] = await Promise.all([
     buildJobReport(jobId),
     buildPromptVarsReport(jobId),
+    buildAllPromptsMarkdown(),
   ]);
 
   // Überschriften der Teildokumente eine Ebene tiefer einhängen.
