@@ -68,6 +68,22 @@ export const exportPromptVars = createServerFn({ method: "POST" })
     return await buildPromptVarsReport(data.jobId);
   });
 
+export const exportFullJobDocs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { buildFullJobDocumentation } = await import("@/lib/pipeline/full-export.server");
+    return await buildFullJobDocumentation(data.jobId);
+  });
+
+export const exportAllPrompts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertRole(context.supabase as never, context.userId, "admin");
+    const { buildAllPromptsMarkdown } = await import("@/lib/pipeline/prompts-export.server");
+    return await buildAllPromptsMarkdown();
+  });
+
 export const runFromStepFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>

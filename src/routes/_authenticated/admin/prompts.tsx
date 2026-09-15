@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { savePrompt, testPrompt } from "@/lib/pipeline.functions";
+import { savePrompt, testPrompt, exportAllPrompts } from "@/lib/pipeline.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,11 +97,34 @@ function PromptsPage() {
     }
   }
 
+  async function onExportAll() {
+    setBusy(true);
+    try {
+      const { filename, markdown } = await exportAllPrompts();
+      const url = URL.createObjectURL(
+        new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Alle Prompts heruntergeladen");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
       <Card className="border-border bg-surface">
-        <CardHeader>
+        <CardHeader className="space-y-2">
           <CardTitle className="text-base">Vorlagen</CardTitle>
+          <Button variant="outline" size="sm" onClick={onExportAll} disabled={busy}>
+            Alle Prompts als .md
+          </Button>
         </CardHeader>
         <CardContent className="space-y-1">
           {(prompts.data ?? []).map((p: Tables<"prompt_templates">) => (
