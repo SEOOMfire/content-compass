@@ -42,3 +42,32 @@ export function checkLocalizedTable(
   }
   return { ok: true };
 }
+
+/** Datenzeilen ohne Trennzeile (|---|---|). */
+export function tableDataRows(md: string): string[] {
+  return tableRows(md).filter((r) => !/^\|[\s|:-]+\|?$/.test(r));
+}
+
+function rowKey(row: string): string {
+  return row.replace(/\s+/g, " ").replace(/\s*\|\s*/g, "|").trim().toLowerCase();
+}
+
+/**
+ * Harte Schlussprüfung: Ist die Tabelle im Zieltext tatsächlich enthalten?
+ * Kriterium: mindestens die Hälfte der Datenzeilen (mind. 1) steht wörtlich im Text.
+ */
+export function tableIsPresent(text: string, table: string): boolean {
+  const rows = tableDataRows(table);
+  if (!rows.length) return true;
+  const haystack = text.split("\n").map(rowKey);
+  const found = rows.filter((r) => haystack.includes(rowKey(r))).length;
+  return found >= Math.max(1, Math.ceil(rows.length / 2));
+}
+
+/** Indizes der Tabellen, die im Zieltext fehlen. */
+export function missingTableIndices(
+  text: string,
+  tables: { index: number; markdown: string }[],
+): number[] {
+  return tables.filter((t) => !tableIsPresent(text, t.markdown)).map((t) => t.index);
+}

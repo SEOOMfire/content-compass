@@ -72,7 +72,24 @@ export function buildSectionInputs(args: {
   }
 
   const sorted = [...tables].sort((a, b) => a.index - b.index);
+  const byIndex = new Map(sorted.map((t) => [t.index, t.markdown]));
+  const assigned = new Set<number>();
+
+  // Zuordnung erfolgt deterministisch über die Positionsmarker [TABELLE n] aus S1,
+  // nicht über das has_table-Flag des Plans (dieses war unzuverlässig).
+  const markersOf = (body: string): number[] =>
+    [...body.matchAll(/\[TABELLE (\d+)\]/g)]
+      .map((m) => Number(m[1]))
+      .filter((n) => byIndex.has(n));
+
   let tableCursor = 0;
+  const nextFreeTable = (): number | null => {
+    while (tableCursor < sorted.length) {
+      const idx = sorted[tableCursor++]?.index;
+      if (idx != null && !assigned.has(idx)) return idx;
+    }
+    return null;
+  };
 
   const out: GenerateSectionInput[] = [];
   for (const section of plan) {
@@ -81,8 +98,15 @@ export function buildSectionInputs(args: {
       unmatched.push(section.de_heading);
       continue;
     }
-    const hasTable = Boolean(section.has_table);
-    const table = hasTable ? (sorted[tableCursor++]?.markdown ?? null) : null;
+    let indices = markersOf(body);
+    if (!indices.length && section.has_table) {
+      const idx = nextFreeTable();
+      if (idx != null) indices = [idx];
+    }
+    indices.forEach((i) => assigned.add(i));
+    const table = indices.length
+      ? indices.map((i) => byIndex.get(i) ?? "").filter(Boolean).join("\n\n")
+      : null;
     out.push({
       de_heading: section.de_heading,
       de_body: body,
@@ -91,13 +115,25 @@ export function buildSectionInputs(args: {
       is_toc: isTocHeading(section.de_heading),
       action: section.action,
       notes: section.notes ?? [],
-      has_table: hasTable && table !== null,
+      has_table: Boolean(table),
       table_markdown: table,
       written_headings: [],
       verified_links: args.verifiedLinks,
       style_profile: args.styleProfile,
       market: args.market,
     });
+  }
+
+  // Keine Tabelle darf verloren gehen: Rest an den letzten inhaltlichen Abschnitt.
+  const leftover = sorted.filter((t) => !assigned.has(t.index));
+  if (leftover.length) {
+    const target = [...out].reverse().find((s) => !s.is_toc && s.action !== "streichen") ?? out[0];
+    if (target) {
+      target.table_markdown = [target.table_markdown, ...leftover.map((t) => t.markdown)]
+        .filter(Boolean)
+        .join("\n\n");
+      target.has_table = true;
+    }
   }
 
   if (unmatched.length) {

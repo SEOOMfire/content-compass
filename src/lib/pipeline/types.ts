@@ -152,6 +152,8 @@ export interface SourceTable {
   index: number;
   markdown: string;
   caption?: string;
+  /** Überschrift des Abschnitts, in dem die Tabelle im Original steht. */
+  section_heading?: string;
 }
 
 export interface SourceSection {

@@ -39,7 +39,8 @@ Jobstatus: `idle` → `running` → `error` (mindestens ein Fehler/blockierter S
 **Aufbereitung** (`extract.server.ts`): Aus dem HTML wird der Hauptbereich gewählt (`main`, sonst `article`, sonst `body`); `script`, `style`, `noscript`, `nav`, `footer`, `header` werden entfernt. Danach entstehen:
 
 * **Abschnitte:** Durchlauf über `h1,h2,h3,p,li`. Jede Überschrift beginnt einen neuen Abschnitt, Absätze und Listenpunkte hängen sich an den laufenden Abschnitt.
-* **Tabellen:** jede `<table>` wird zu Markdown umgewandelt (erste Zeile = Kopf, `|` in Zellen wird maskiert), durchnummeriert.
+* **Tabellen:** jede `<table>` wird zu Markdown umgewandelt (erste Zeile = Kopf, `|` in Zellen wird maskiert), durchnummeriert. An der Fundstelle im Abschnittstext bleibt ein Positionsmarker `[TABELLE n]` stehen, dazu wird die zugehörige Abschnittsüberschrift gespeichert.
+* **Formatierung:** echte Listenpunkte (`<li>`) werden als Zeile mit `- ` erfasst, Absätze (`<p>`) als eigene Zeile ohne Marker. So bleibt unterscheidbar, was im Original Fließtext und was Liste war.
 * **hreflang-Liste:** alle `link[rel=alternate][hreflang]` mit Sprache und Adresse.
 * **Content-Links:** interne Links **nur aus dem Hauptbereich** — ohne Anker (`#`), `mailto:`, `tel:`, ohne Bild-/PDF-Dateien, ohne Selbstverweis, doppelte Adressen einmalig. Gespeichert mit Linktext. Diese Liste ist die Grundlage der hreflang-Ernte in S3/S7a.
 * Zusätzlich: Titel, H1, Meta-Beschreibung, Canonical, Wortzahl, Gliederung.
@@ -194,6 +195,10 @@ Jede gewählte Adresse wird live geprüft (HTTP 200 + Canonical + kein Soft-404)
 
 ---
 
+### Tabellenprüfung am Ende
+
+Nach S11 wird für jede lokalisierte Tabelle geprüft, ob ihre Zeilen tatsächlich im Zieltext stehen; fehlt sie, wird sie im zugeordneten Abschnitt ergänzt. In S13 gilt die harte Regel: fehlt eine Tabelle der Quelle im Zieltext, bricht der Export mit Klartextmeldung ab.
+
 ## S10 · Tabellen lokalisieren
 
 Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministische Prüfung** im Code: gleiche Zeilenzahl wie im Original und — bei Zielsprache ≠ Deutsch — tatsächlich verändertes Ergebnis. Fällt die Prüfung durch, wird bis zu dreimal wiederholt; danach bricht der Schritt mit Angabe des Grundes ab. Ohne Tabellen im Original passiert nichts.
@@ -206,7 +211,7 @@ Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministis
 
 **Inhaltsverzeichnis.** Abschnitte, deren deutsche Überschrift ein Inhaltsverzeichnis ist (z. B. „Inhaltsverzeichnis", „Das erwartet dich", „Auf einen Blick"), werden nicht von der KI geschrieben. Es entsteht nur die Überschrift plus die Zeile `[INHALTSVERZEICHNIS – Platzhalter]`.
 
-**Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **nur** an Abschnitte mit Tabellenkennzeichen vergeben, in Originalreihenfolge.
+**Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **deterministisch über die Positionsmarker `[TABELLE n]`** dem Abschnitt zugeordnet, in dem sie im Original stehen — unabhängig vom Tabellenkennzeichen des Plans. Ohne Marker greift das Kennzeichen als Rückfall; übrig gebliebene Tabellen gehen an den letzten inhaltlichen Abschnitt, damit keine Tabelle verloren geht.
 
 **Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, der **komplette bisher geschriebene Artikel** (`previous_content`), die Liste der noch verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), gegebenenfalls die lokalisierte Tabelle, sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen.
 

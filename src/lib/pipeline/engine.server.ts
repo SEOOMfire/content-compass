@@ -47,7 +47,7 @@ import {
 } from "./paths";
 import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
-import { checkLocalizedTable } from "./tables";
+import { checkLocalizedTable, missingTableIndices } from "./tables";
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
 
@@ -1435,7 +1435,10 @@ export async function runStep(
           address_form: market.address_form ?? "",
           style_profile: input.style_profile,
           style_example: "",
-          de_section: `${hashes} ${input.de_heading}\n${input.de_body}`,
+          de_section: `${hashes} ${input.de_heading}\n${input.de_body.replace(
+            /\[TABELLE \d+\]/g,
+            "[TABELLE HIER EINFÜGEN]",
+          )}`,
           target_heading: input.target_heading,
           heading_level: input.heading_level,
           heading_markup: `${hashes} ${input.target_heading}`,
@@ -1445,18 +1448,42 @@ export async function runStep(
           verified_links: availableLinks(),
           used_links: usedLinksForPrompt(),
           previous_content: previousContent,
-          table_markdown: input.table_markdown ?? "",
+          table_markdown: input.table_markdown
+            ? `<tabelle_pflicht>\n${input.table_markdown}\n</tabelle_pflicht>`
+            : "",
         });
         snapshots.push(res.promptSnapshot);
         tokensIn += res.tokensIn;
         tokensOut += res.tokensOut;
         const raw = typeof res.data === "string" ? res.data : String(res.data);
-        const md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
+        let md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
+        md = md.replace(/\[TABELLE[^\]]*\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+        // Harte Tabellenprüfung je Abschnitt: fehlt die zugeordnete Tabelle,
+        // wird sie deterministisch ergänzt statt verloren zu gehen.
+        if (input.table_markdown && missingTableIndices(md, [{ index: 0, markdown: input.table_markdown }]).length) {
+          md = `${md}\n\n${input.table_markdown}`;
+        }
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
+      // Schlussprüfung über den Gesamttext: jede lokalisierte Tabelle muss vorkommen.
+      const allTables = ctx.tables ?? [];
+      const missingAfter = missingTableIndices(
+        content.map((c) => c.markdown).join("\n\n"),
+        allTables,
+      );
+      if (missingAfter.length) {
+        const last = content[content.length - 1];
+        if (!last) throw new Error("S11: Tabellen konnten nicht eingefügt werden.");
+        last.markdown = [
+          last.markdown,
+          ...missingAfter.map((i) => allTables.find((t) => t.index === i)?.markdown ?? ""),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+      }
       return {
         output: content,
         context: { content },
@@ -1493,6 +1520,13 @@ export async function runStep(
       const source = requireSource(ctx);
       const broken = ctx.brokenLinks ?? [];
       const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
+      // Harte Schlussprüfung: jede Tabelle der Quelle muss im Zieltext stehen.
+      const missingTables = missingTableIndices(bodyText, ctx.tables ?? []);
+      if (missingTables.length) {
+        throw new Error(
+          `Tabelle(n) ${missingTables.map((i) => i + 1).join(", ")} aus der Quelle fehlen im Zieltext. Bitte S10 und S11 erneut ausführen.`,
+        );
+      }
       const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
       const readingMinutes = Math.max(1, Math.round(targetWords / 200));
       // H1 nur ergänzen, wenn der Content selbst keine H1 enthält (#3).

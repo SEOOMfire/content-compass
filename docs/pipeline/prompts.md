@@ -321,9 +321,13 @@ VERLINKUNG:
   Thema behandelt als der Ankertext verspricht (z. B. Anker „Schlittenfahren beim Hund",
   Ziel ist ein Entwurmungsartikel), formuliere den Ankertext auf das tatsächliche
   Thema der Zielseite um oder lass den Link weg. Lieber kein Link als ein irreführender.
-- Falls eine Tabelle übergeben wurde, füge sie unverändert an passender Stelle ein.
-  Wenn keine Tabelle übergeben wurde, erzeuge keine.
-- Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
+- FORMAT EXAKT BEIBEHALTEN: Absätze bleiben Absätze, Listenpunkte (im Original mit
+  "- " markiert) bleiben Listenpunkte – gleiche Reihenfolge und Anzahl. Kein Umwandeln
+  von Fließtext in Stichpunkte und umgekehrt, keine erfundenen Listen.
+- TABELLE (Pflicht): Eine in <tabelle_pflicht> übergebene Tabelle steht vollständig und
+  Zeile für Zeile im Abschnitt. Die Stelle [TABELLE HIER EINFÜGEN] im Original zeigt die
+  Position; der Marker selbst wird nie ausgegeben. Ohne übergebene Tabelle keine erzeugen.
+- Format: Überschrift wie vorgegeben, darunter Fließtext und Listen wie im Original,
   Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
 Gib nur den fertigen Abschnitt aus, keine Erklärungen.
