@@ -49,6 +49,13 @@ export async function buildFullJobDocumentation(
   out.push("");
   out.push(demote(vars.markdown.trim()));
   out.push("");
+  out.push("---");
+  out.push("");
+  out.push("# Teil 4 · Prompt-Vorlagen (aktueller Stand)");
+  out.push("");
+  out.push(demote(prompts.markdown.trim()));
+  out.push("");
+
 
   return { filename: `job-${jobId}-gesamtdokumentation.md`, markdown: out.join("\n") };
 }
