@@ -21,7 +21,7 @@ import {
 } from "../src/lib/pipeline/hreflang.server";
 import { buildKeyword, serpTarget } from "../src/lib/pipeline/serp.server";
 import { isUsable, retrieveFromPool } from "../src/lib/pipeline/pool";
-import { checkLocalizedTable, tableRows } from "../src/lib/pipeline/tables";
+import { checkLocalizedTable, missingTableIndices, tableRows } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
 import {
   S2OutputSchema,
@@ -415,5 +415,77 @@ describe("18 · Pfadpräfix und Pfadlücken", () => {
         weitere: "autres",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("19 · Tabellenzuordnung und Tabellenprüfung", () => {
+  const sourceSections: SourceSection[] = [
+    { heading: "Steckbrief", level: 2, text: "Kurzprofil …\n[TABELLE 0]" },
+    { heading: "Charakter", level: 2, text: "- Ruhig\n- Wachsam" },
+  ];
+  const plan: PlanSection[] = [
+    {
+      de_heading: "Steckbrief",
+      target_heading: "W skrócie",
+      action: "uebersetzen",
+      notes: [],
+      has_table: false,
+      anchors: [],
+    },
+    {
+      de_heading: "Charakter",
+      target_heading: "Charakter",
+      action: "uebersetzen",
+      notes: [],
+      has_table: false,
+      anchors: [],
+    },
+  ];
+  const tables = [{ index: 0, markdown: "| Pochodzenie | Wielka Brytania |\n| --- | --- |\n| Waga | 70 kg |" }];
+
+  test("Positionsmarker gewinnt über fehlendes has_table-Kennzeichen", () => {
+    const inputs = buildSectionInputs({
+      plan,
+      sourceSections,
+      tables,
+      verifiedLinks: [],
+      styleProfile: {},
+      market: {},
+    });
+    expect(inputs[0]?.has_table).toBe(true);
+    expect(inputs[0]?.table_markdown).toContain("Wielka Brytania");
+    expect(inputs[1]?.has_table).toBe(false);
+  });
+
+  test("ohne Marker landet die Tabelle trotzdem in einem Abschnitt", () => {
+    const inputs = buildSectionInputs({
+      plan,
+      sourceSections: [
+        { heading: "Steckbrief", level: 2, text: "Kurzprofil …" },
+        { heading: "Charakter", level: 2, text: "- Ruhig" },
+      ],
+      tables,
+      verifiedLinks: [],
+      styleProfile: {},
+      market: {},
+    });
+    expect(inputs.some((i) => i.has_table)).toBe(true);
+  });
+
+  test("fehlende Tabelle im Zieltext wird erkannt", () => {
+    expect(missingTableIndices("Nur Text ohne Tabelle", tables)).toEqual([0]);
+    expect(missingTableIndices(`Text\n\n${tables[0]!.markdown}`, tables)).toEqual([]);
+  });
+
+  test("Listenpunkte bleiben als Listenzeilen erhalten", () => {
+    const inputs = buildSectionInputs({
+      plan,
+      sourceSections,
+      tables,
+      verifiedLinks: [],
+      styleProfile: {},
+      market: {},
+    });
+    expect(inputs[1]?.de_body).toContain("- Ruhig");
   });
 });
