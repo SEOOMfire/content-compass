@@ -47,7 +47,7 @@ import {
 } from "./paths";
 import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
-import { checkLocalizedTable } from "./tables";
+import { checkLocalizedTable, missingTableIndices } from "./tables";
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
 
@@ -1445,7 +1445,9 @@ export async function runStep(
           verified_links: availableLinks(),
           used_links: usedLinksForPrompt(),
           previous_content: previousContent,
-          table_markdown: input.table_markdown ?? "",
+          table_markdown: input.table_markdown
+            ? `<tabelle_pflicht>\n${input.table_markdown}\n</tabelle_pflicht>`
+            : "",
         });
         snapshots.push(res.promptSnapshot);
         tokensIn += res.tokensIn;
