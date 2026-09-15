@@ -1435,7 +1435,10 @@ export async function runStep(
           address_form: market.address_form ?? "",
           style_profile: input.style_profile,
           style_example: "",
-          de_section: `${hashes} ${input.de_heading}\n${input.de_body}`,
+          de_section: `${hashes} ${input.de_heading}\n${input.de_body.replace(
+            /\[TABELLE \d+\]/g,
+            "[TABELLE HIER EINFÜGEN]",
+          )}`,
           target_heading: input.target_heading,
           heading_level: input.heading_level,
           heading_markup: `${hashes} ${input.target_heading}`,
@@ -1453,12 +1456,34 @@ export async function runStep(
         tokensIn += res.tokensIn;
         tokensOut += res.tokensOut;
         const raw = typeof res.data === "string" ? res.data : String(res.data);
-        const md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
+        let md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
+        md = md.replace(/\[TABELLE[^\]]*\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+        // Harte Tabellenprüfung je Abschnitt: fehlt die zugeordnete Tabelle,
+        // wird sie deterministisch ergänzt statt verloren zu gehen.
+        if (input.table_markdown && missingTableIndices(md, [{ index: 0, markdown: input.table_markdown }]).length) {
+          md = `${md}\n\n${input.table_markdown}`;
+        }
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
+      // Schlussprüfung über den Gesamttext: jede lokalisierte Tabelle muss vorkommen.
+      const allTables = ctx.tables ?? [];
+      const missingAfter = missingTableIndices(
+        content.map((c) => c.markdown).join("\n\n"),
+        allTables,
+      );
+      if (missingAfter.length) {
+        const last = content[content.length - 1];
+        if (!last) throw new Error("S11: Tabellen konnten nicht eingefügt werden.");
+        last.markdown = [
+          last.markdown,
+          ...missingAfter.map((i) => allTables.find((t) => t.index === i)?.markdown ?? ""),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+      }
       return {
         output: content,
         context: { content },
