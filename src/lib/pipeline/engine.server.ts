@@ -1544,8 +1544,9 @@ export async function runStep(
         );
       }
       return {
-        output: content,
-        context: { content },
+        output: softWarnings.length ? { sections: content, warnings: softWarnings } : content,
+        context: { content, contentWarnings: softWarnings },
+
         model: tpl.model,
         promptSnapshot: snapshots.join("\n\n=====\n\n"),
         tokensIn,
