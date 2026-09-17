@@ -197,7 +197,7 @@ Jede gewählte Adresse wird live geprüft (HTTP 200 + Canonical + kein Soft-404)
 
 ### Tabellenprüfung am Ende
 
-Nach S11 wird für jede lokalisierte Tabelle geprüft, ob ihre Zeilen tatsächlich im Zieltext stehen; fehlt sie, wird sie im zugeordneten Abschnitt ergänzt. In S13 gilt die harte Regel: fehlt eine Tabelle der Quelle im Zieltext, bricht der Export mit Klartextmeldung ab.
+S11 übergibt dem Modell nur einen undurchsichtigen Positionsmarker. Das Modell darf keine Tabelle schreiben. Nach der Erzeugung entfernt die technische Prüfung jede vom Modell erzeugte Tabelle und wiederholt den Abschnitt; erst danach ersetzt der Code jeden Marker durch exakt die in S10 lokalisierte Tabelle. Geprüft werden exakte Identität, genau ein Vorkommen und der zugeordnete Abschnitt. Fehlende, doppelte, veränderte oder zusätzliche Tabellen blockieren S11, S12 und S13.
 
 ## S10 · Tabellen lokalisieren
 
@@ -213,7 +213,7 @@ Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministis
 
 **Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **deterministisch über die Positionsmarker `[TABELLE n]`** dem Abschnitt zugeordnet, in dem sie im Original stehen — unabhängig vom Tabellenkennzeichen des Plans. Ohne Marker greift das Kennzeichen als Rückfall; übrig gebliebene Tabellen gehen an den letzten inhaltlichen Abschnitt, damit keine Tabelle verloren geht.
 
-**Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, der **komplette bisher geschriebene Artikel** (`previous_content`), die Liste der noch verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), gegebenenfalls die lokalisierte Tabelle, sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen.
+**Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt mit technischen Tabellenmarkern, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, der **komplette bisher geschriebene Artikel** (`previous_content`), die Liste der noch verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), Strukturzahlen und Wortbudget sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen. Jeder Abschnitt wird höchstens dreimal erzeugt; falsche Listen-/Absatzanzahl, zusätzliche Überschriften, eigene Tabellen, fehlende Marker oder Überschreitung des Wortbudgets lösen einen Korrekturversuch aus und danach einen Fehler.
 
 **Linkbudget (im Code durchgesetzt).** Nach jedem Abschnitt liest der Code die tatsächlich gesetzten Links aus dem erzeugten Markdown und zählt sie je Ziel-URL mit dem verwendeten Ankertext mit. Eine URL mit zwei Verwendungen wird aus der Kandidatenliste des nächsten Abschnitts entfernt; eine URL mit einer Verwendung bleibt drin, aber ausdrücklich markiert („bereits 1x verlinkt als …“) und ist nur mit komplett anderem Ankertext erneut erlaubt.
 
@@ -225,7 +225,7 @@ Die harten inhaltlichen Regeln (ausschließlich Zielsprache, keine unbestätigte
 
 ## S12 · QA
 
-Der gesamte erzeugte Text wird mit Prompt `qa` geprüft, zusammen mit Sprache, Land, Marke, Institutionen und verbotenen Begriffen. Gemeldet werden einzeln: deutsche Reste (`sprache`), unbestätigte Serviceaussagen (`unbestaetigter_service`), unpassende Anker (`link_mismatch`), Slug- oder Kleinschreib-Überschriften (`ueberschrift`), aus dem Deutschen übernommene Lesezeit (`lesezeit`, mit korrektem Wert) sowie Markenname, Ansprache und verbotene Begriffe.
+Vor der sprachlichen QA laufen unabhängige Code-Prüfungen für Tabellenanzahl/-identität, Überschriften, Listen, Absätze sowie Abschnitts- und Gesamtwortzahl. Die KI erhält zusätzlich die vollständige Quelle, die lokalisierten Tabellen und einen Strukturbericht und prüft Ergänzungen, Widersprüche und inkonsistente Lokalisierung. Jeder Befund blockiert S12; S13 setzt eine erfolgreich abgeschlossene QA ohne offene Befunde voraus.
 
 ---
 

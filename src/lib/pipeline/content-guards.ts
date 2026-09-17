@@ -16,17 +16,21 @@ export function countListItems(text: string): number {
 }
 
 export function countParagraphs(text: string): number {
-  return text
-    .split(/\n\s*\n/)
-    .map((block) => block.trim())
+  const withoutStructuralLines = text
+    .split("\n")
     .filter(
-      (block) =>
-        block &&
-        !/^#{1,6}\s/.test(block) &&
-        !/^\s*[-*+]\s/m.test(block) &&
-        !/^\s*\|/.test(block) &&
-        !/^\[\[OMFIRE_TABLE_\d+\]\]$/.test(block),
-    ).length;
+      (line) =>
+        !/^\s*#{1,6}\s/.test(line) &&
+        !/^\s*[-*+]\s+/.test(line) &&
+        !/^\s*\|/.test(line) &&
+        !/^\[\[OMFIRE_TABLE_\d+\]\]$/.test(line.trim()),
+    )
+    .join("\n");
+  const separator = /\n\s*\n/.test(withoutStructuralLines) ? /\n\s*\n/ : /\n/;
+  return withoutStructuralLines
+    .split(separator)
+    .map((block) => block.trim())
+    .filter(Boolean).length;
 }
 
 export function headingLines(text: string): string[] {

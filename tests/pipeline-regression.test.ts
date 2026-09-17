@@ -21,8 +21,20 @@ import {
 } from "../src/lib/pipeline/hreflang.server";
 import { buildKeyword, serpTarget } from "../src/lib/pipeline/serp.server";
 import { isUsable, retrieveFromPool } from "../src/lib/pipeline/pool";
-import { checkLocalizedTable, missingTableIndices, tableRows } from "../src/lib/pipeline/tables";
+import {
+  checkExactTables,
+  checkLocalizedTable,
+  extractMarkdownTables,
+  missingTableIndices,
+  stripMarkdownTables,
+  tableRows,
+} from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
+import {
+  checkGeneratedSection,
+  deterministicArticleIssues,
+} from "../src/lib/pipeline/content-guards";
+import { cleanHeadingText } from "../src/lib/pipeline/extract.server";
 import {
   S2OutputSchema,
   S6OutputSchema,
@@ -457,19 +469,20 @@ describe("19 · Tabellenzuordnung und Tabellenprüfung", () => {
     expect(inputs[1]?.has_table).toBe(false);
   });
 
-  test("ohne Marker landet die Tabelle trotzdem in einem Abschnitt", () => {
-    const inputs = buildSectionInputs({
-      plan,
-      sourceSections: [
-        { heading: "Steckbrief", level: 2, text: "Kurzprofil …" },
-        { heading: "Charakter", level: 2, text: "- Ruhig" },
-      ],
-      tables,
-      verifiedLinks: [],
-      styleProfile: {},
-      market: {},
-    });
-    expect(inputs.some((i) => i.has_table)).toBe(true);
+  test("ohne Marker oder Abschnittsbeleg wird die Tabelle nicht beliebig angehängt", () => {
+    expect(() =>
+      buildSectionInputs({
+        plan,
+        sourceSections: [
+          { heading: "Steckbrief", level: 2, text: "Kurzprofil …" },
+          { heading: "Charakter", level: 2, text: "- Ruhig" },
+        ],
+        tables,
+        verifiedLinks: [],
+        styleProfile: {},
+        market: {},
+      }),
+    ).toThrow(PlanMappingError);
   });
 
   test("fehlende Tabelle im Zieltext wird erkannt", () => {
@@ -487,5 +500,63 @@ describe("19 · Tabellenzuordnung und Tabellenprüfung", () => {
       market: {},
     });
     expect(inputs[1]?.de_body).toContain("- Ruhig");
+  });
+});
+
+describe("20 · Harte Content-Schutzregeln", () => {
+  const table = "| Name | Wert |\n| --- | --- |\n| Größe | 8 cm |";
+
+  test("genau eine exakte Tabelle wird akzeptiert", () => {
+    expect(checkExactTables(`Text\n\n${table}`, [{ index: 0, markdown: table }]).ok).toBe(true);
+    expect(extractMarkdownTables(`Text\n\n${table}`)).toHaveLength(1);
+  });
+
+  test("doppelte und frei erzeugte Tabellen werden erkannt", () => {
+    const invented = "| Name | Deutung |\n| --- | --- |\n| Größe | variabel |";
+    const duplicate = checkExactTables(`${table}\n\n${table}`, [{ index: 0, markdown: table }]);
+    expect(duplicate.duplicated).toEqual([0]);
+    expect(checkExactTables(`${table}\n\n${invented}`, [{ index: 0, markdown: table }]).foreign).toBe(1);
+    expect(stripMarkdownTables(`Absatz\n\n${invented}`).removed).toHaveLength(1);
+  });
+
+  test("Listenabweichung, doppelte Überschrift und zu langer Text blockieren", () => {
+    const source = "Ein kurzer Absatz.\n- Punkt eins\n- Punkt zwei";
+    const target = "## Ziel\n\n## Zweite Überschrift\n\nEin sehr langer Absatz mit vielen frei ergänzten Wörtern, Hinweisen, Beispielen und weiteren Aussagen.\n- Nur ein Punkt";
+    const result = checkGeneratedSection(source, target);
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => r.includes("Listenpunktzahl"))).toBe(true);
+    expect(result.reasons.some((r) => r.includes("statt genau einer Überschrift"))).toBe(true);
+  });
+
+  test("Gesamtprüfung blockiert fremde Tabellen und starke Verlängerung", () => {
+    const target = `## Ziel\n\n${table}\n\n| Fremd | Wert |\n| --- | --- |\n| A | B |\n\n${"Zusatz ".repeat(80)}`;
+    const issues = deterministicArticleIssues({
+      sourceText: "Kurzer Ursprungstext.",
+      targetText: target,
+      tables: [{ index: 0, markdown: table }],
+      sections: [],
+    });
+    expect(issues.some((i) => i.type === "tabelle_zusaetzlich")).toBe(true);
+    expect(issues.some((i) => i.type === "laenge")).toBe(true);
+  });
+
+  test("Überschriftentext verliert doppelte Markdown-Marker", () => {
+    expect(cleanHeadingText("## # Profil Tier")).toBe("Profil Tier");
+  });
+
+  test("doppelte Quellüberschriften werden nicht still zusammengeführt", () => {
+    expect(() =>
+      buildSectionInputs({
+        plan: [plan[0]!],
+        sourceSections: [
+          { heading: "Steckbrief", level: 2, text: "A" },
+          { heading: "Steckbrief", level: 2, text: "B" },
+        ],
+        tables: [],
+        verifiedLinks: [],
+        styleProfile: {},
+        market: {},
+      }),
+    ).toThrow(PlanMappingError);
   });
 });
