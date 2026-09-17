@@ -328,8 +328,10 @@ VERLINKUNG:
   Ziel ist ein Entwurmungsartikel), formuliere den Ankertext auf das tatsächliche
   Thema der Zielseite um oder lass den Link weg. Lieber kein Link als ein irreführender.
 - FORMAT EXAKT BEIBEHALTEN: Absätze bleiben Absätze, Listenpunkte (im Original mit
-  "- " markiert) bleiben Listenpunkte – gleiche Reihenfolge und Anzahl. Kein Umwandeln
-  von Fließtext in Stichpunkte und umgekehrt, keine erfundenen Listen.
+  "- " markiert) bleiben Listenpunkte – gleiche Reihenfolge und Anzahl. Stichpunkte
+  stehen ausschließlich dort, wo das Original Stichpunkte hat; ohne Listenpunkt im
+  Original enthält der Abschnitt keine Liste. Kein Umwandeln von Fließtext in
+  Stichpunkte und umgekehrt, keine erfundenen Listen, gleiche Absatzanzahl.
 - TABELLE (Pflicht): Eine in <tabelle_pflicht> übergebene Tabelle steht vollständig und
   Zeile für Zeile im Abschnitt. Die Stelle [TABELLE HIER EINFÜGEN] im Original zeigt die
   Position; der Marker selbst wird nie ausgegeben. Ohne übergebene Tabelle keine erzeugen.
