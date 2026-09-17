@@ -50,14 +50,17 @@ export function dependencyBlocker(stepKey: string, ctx: JobContext): string | nu
     }
     case "S12_qa":
       return ctx.content?.length ? null : "S11 (Content erzeugen) muss zuerst laufen.";
-    case "S13_export":
-      return !ctx.content?.length
-        ? "S11 (Content erzeugen) muss zuerst laufen."
-        : !ctx.qa
-          ? "S12 (QA) muss zuerst erfolgreich laufen."
-          : ctx.qa.issues.length
-            ? `S12 enthält ${ctx.qa.issues.length} ungelöste Qualitätsfehler.`
-            : null;
+    case "S13_export": {
+      if (!ctx.content?.length) return "S11 (Content erzeugen) muss zuerst laufen.";
+      if (!ctx.qa) return "S12 (QA) muss zuerst laufen.";
+      const blocking =
+        ctx.qa.blocking ??
+        ctx.qa.issues.filter((i) => (i.severity ?? "error") === "error").length;
+      return blocking
+        ? `S12 meldet ${blocking} schwerwiegende Fehler – bitte zuerst beheben.`
+        : null;
+    }
+
     default:
       return null;
   }

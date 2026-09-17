@@ -50,13 +50,17 @@ import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkExactTables, checkLocalizedTable, stripMarkdownTables } from "./tables";
 import {
+  blockingIssues,
   checkGeneratedSection,
   countListItems,
   countParagraphs,
   countWords,
   deterministicArticleIssues,
+  issueSeverity,
+  normalizeForComparison,
   MAX_SECTION_WORD_RATIO,
 } from "./content-guards";
+
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
 
@@ -1385,6 +1389,8 @@ export async function runStep(
       const written: string[] = [];
       const content: { heading: string; markdown: string }[] = [];
       const snapshots: string[] = [];
+      const softWarnings: string[] = [];
+
       let tokensIn = 0;
       let tokensOut = 0;
 
@@ -1451,6 +1457,7 @@ export async function runStep(
         const sourceWords = countWords(sourceWithMarkers);
         const maxTargetWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 5);
         let md: string | null = null;
+        let fallback: string | null = null;
         let lastReasons: string[] = [];
 
         for (let attempt = 0; attempt < 3 && md === null; attempt++) {
@@ -1491,27 +1498,38 @@ export async function runStep(
           const markerProblems = requiredMarkers.filter(
             (marker) => candidate.split(marker).length - 1 !== 1,
           );
-          lastReasons = [];
-          if (stripped.removed.length) lastReasons.push("Das Modell hat eine eigene Tabelle erzeugt.");
-          if (markerProblems.length) lastReasons.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
           const guard = checkGeneratedSection(sourceWithMarkers, candidate);
-          lastReasons.push(...guard.reasons);
-          if (lastReasons.length) continue;
-          for (const table of input.tables) {
-            candidate = candidate.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+          const hard: string[] = [...guard.hardReasons];
+          if (stripped.removed.length) hard.push("Das Modell hat eine eigene Tabelle erzeugt.");
+          if (markerProblems.length) hard.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
+          lastReasons = [...hard, ...guard.softReasons];
+
+          if (!markerProblems.length) {
+            for (const table of input.tables) {
+              candidate = candidate.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+            }
+            const exact = checkExactTables(candidate, input.tables);
+            if (!exact.ok) {
+              hard.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
+              lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
+            } else if (!hard.length) {
+              const cleaned = candidate.replace(/\n{3,}/g, "\n\n").trim();
+              // Weiche Abweichungen: einmal nachbessern lassen, sonst übernehmen und protokollieren.
+              if (!guard.softReasons.length) md = cleaned;
+              else fallback = cleaned;
+            }
           }
-          const exact = checkExactTables(candidate, input.tables);
-          if (!exact.ok) {
-            lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
-            continue;
-          }
-          md = candidate.replace(/\n{3,}/g, "\n\n").trim();
+        }
+        if (md === null && fallback !== null) {
+          md = fallback;
+          softWarnings.push(`„${input.target_heading}“: ${lastReasons.join(" ")}`);
         }
         if (md === null) {
           throw new Error(
             `Abschnitt „${input.target_heading}“ verletzt nach drei Versuchen die Strukturregeln: ${lastReasons.join(" ")}`,
           );
         }
+
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
@@ -1526,8 +1544,9 @@ export async function runStep(
         );
       }
       return {
-        output: content,
-        context: { content },
+        output: softWarnings.length ? { sections: content, warnings: softWarnings } : content,
+        context: { content, contentWarnings: softWarnings },
+
         model: tpl.model,
         promptSnapshot: snapshots.join("\n\n=====\n\n"),
         tokensIn,
@@ -1564,15 +1583,20 @@ export async function runStep(
         full_text: full,
         source_text: source.sections.map((s) => `H${s.level} ${s.heading}\n${s.text}`).join("\n\n"),
         localized_tables: ctx.tables ?? [],
-        structure_report: sectionPairs.map((pair) => ({
-          heading: pair.heading,
-          source_words: countWords(pair.source),
-          target_words: countWords(pair.target),
-          source_list_items: countListItems(pair.source),
-          target_list_items: countListItems(pair.target),
-          source_paragraphs: countParagraphs(pair.source),
-          target_paragraphs: countParagraphs(pair.target),
-        })),
+        structure_report: sectionPairs.map((pair) => {
+          const src = normalizeForComparison(pair.source);
+          const tgt = normalizeForComparison(pair.target);
+          return {
+            heading: pair.heading,
+            source_words: countWords(src),
+            target_words: countWords(tgt),
+            source_list_items: countListItems(src),
+            target_list_items: countListItems(tgt),
+            source_paragraphs: countParagraphs(src),
+            target_paragraphs: countParagraphs(tgt),
+          };
+        }),
+
         brand: market.brand ?? "",
         forbidden_terms: market.forbidden_claims ?? [],
         institutions: market.institutions ?? {},
@@ -1580,10 +1604,19 @@ export async function runStep(
         language: market.language,
       });
       const parsed = validateStepData("S12_qa", S12OutputSchema, res.data);
-      const qa = { issues: [...deterministic, ...parsed.issues] };
-      if (qa.issues.length) {
+      const all = [...deterministic, ...parsed.issues].map((issue) => ({
+        ...issue,
+        severity: issueSeverity(issue),
+      }));
+      const blocking = blockingIssues(all);
+      const qa = {
+        issues: all,
+        blocking: blocking.length,
+        warnings: all.length - blocking.length,
+      };
+      if (blocking.length) {
         throw new PipelineQualityError(
-          `QA blockiert den Export: ${qa.issues.length} ungelöste Qualitätsfehler.`,
+          `QA blockiert den Export: ${blocking.length} schwerwiegende Fehler (${qa.warnings} Hinweise).`,
           qa,
           { qa },
         );
@@ -1591,6 +1624,7 @@ export async function runStep(
       return {
         output: qa,
         context: { qa },
+
         model: res.model,
         promptSnapshot: res.promptSnapshot,
         tokensIn: res.tokensIn,

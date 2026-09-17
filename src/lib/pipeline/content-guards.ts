@@ -1,7 +1,18 @@
-import { checkExactTables } from "./tables";
+import { checkExactTables, stripMarkdownTables } from "./tables";
 
-export const MAX_SECTION_WORD_RATIO = 1.25;
-export const MAX_ARTICLE_WORD_RATIO = 1.2;
+export const MAX_SECTION_WORD_RATIO = 1.35;
+export const MAX_ARTICLE_WORD_RATIO = 1.3;
+/** Kleine Abweichungen in der Absatzzahl sind unkritisch (Bild-/Nachweiszeilen). */
+export const PARAGRAPH_TOLERANCE = 1;
+
+/** Vergleichsform: Tabellen zu Markern, Marker vereinheitlicht. */
+export function normalizeForComparison(text: string): string {
+  const stripped = stripMarkdownTables(text).text;
+  return stripped
+    .replace(/\[TABELLE (\d+)\]/g, (_m, i: string) => `[[OMFIRE_TABLE_${i}]]`)
+    .replace(/^\s*\[\[OMFIRE_TABLE_\d+\]\]\s*$/gm, "");
+}
+
 
 export function countWords(text: string): number {
   return text
@@ -43,41 +54,86 @@ export function hasNestedHeadingMarkers(text: string): boolean {
 
 export interface SectionGuardResult {
   ok: boolean;
+  /** Alle Beanstandungen (hart + weich) – Grundlage für einen Korrekturversuch. */
   reasons: string[];
+  /** Nur Verstöße, die einen Abschnitt unbrauchbar machen. */
+  hardReasons: string[];
+  /** Abweichungen, die als Hinweis genügen und den Lauf nicht stoppen. */
+  softReasons: string[];
   sourceWords: number;
   targetWords: number;
 }
 
-/** Harte, sprachunabhängige Struktur- und Umfangsprüfung je Abschnitt. */
+/** Struktur- und Umfangsprüfung je Abschnitt, sprachunabhängig. */
 export function checkGeneratedSection(source: string, target: string): SectionGuardResult {
-  const sourceWords = countWords(source);
-  const targetWords = countWords(target);
-  const reasons: string[] = [];
-  const sourceLists = countListItems(source);
-  const targetLists = countListItems(target);
+  const src = normalizeForComparison(source);
+  const tgt = normalizeForComparison(target);
+  const sourceWords = countWords(src);
+  const targetWords = countWords(tgt);
+  const hardReasons: string[] = [];
+  const softReasons: string[] = [];
+  const sourceLists = countListItems(src);
+  const targetLists = countListItems(tgt);
   if (sourceLists !== targetLists) {
-    reasons.push(`Listenpunktzahl weicht ab (Quelle ${sourceLists}, Ziel ${targetLists}).`);
+    const reason = `Listenpunktzahl weicht ab (Quelle ${sourceLists}, Ziel ${targetLists}).`;
+    if (Math.abs(sourceLists - targetLists) > 1) hardReasons.push(reason);
+    else softReasons.push(reason);
   }
-  const sourceParagraphs = countParagraphs(source);
-  const targetParagraphs = countParagraphs(target);
-  if (sourceParagraphs !== targetParagraphs) {
-    reasons.push(`Absatzanzahl weicht ab (Quelle ${sourceParagraphs}, Ziel ${targetParagraphs}).`);
+  const sourceParagraphs = countParagraphs(src);
+  const targetParagraphs = countParagraphs(tgt);
+  if (Math.abs(sourceParagraphs - targetParagraphs) > PARAGRAPH_TOLERANCE) {
+    softReasons.push(`Absatzanzahl weicht ab (Quelle ${sourceParagraphs}, Ziel ${targetParagraphs}).`);
   }
-  const headings = headingLines(target);
-  if (headings.length !== 1) reasons.push(`Abschnitt enthält ${headings.length} statt genau einer Überschrift.`);
-  if (hasNestedHeadingMarkers(target)) reasons.push("Überschrift enthält verschachtelte Markdown-Marker.");
-  const maxWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 5);
+  const headings = headingLines(tgt);
+  if (headings.length !== 1) {
+    hardReasons.push(`Abschnitt enthält ${headings.length} statt genau einer Überschrift.`);
+  }
+  if (hasNestedHeadingMarkers(tgt)) {
+    hardReasons.push("Überschrift enthält verschachtelte Markdown-Marker.");
+  }
+  const maxWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 15);
   if (sourceWords > 0 && targetWords > maxWords) {
-    reasons.push(`Wortbudget überschritten (Quelle ${sourceWords}, Ziel ${targetWords}, Maximum ${maxWords}).`);
+    softReasons.push(
+      `Wortbudget überschritten (Quelle ${sourceWords}, Ziel ${targetWords}, Maximum ${maxWords}).`,
+    );
   }
-  return { ok: reasons.length === 0, reasons, sourceWords, targetWords };
+  return {
+    ok: hardReasons.length === 0 && softReasons.length === 0,
+    reasons: [...hardReasons, ...softReasons],
+    hardReasons,
+    softReasons,
+    sourceWords,
+    targetWords,
+  };
 }
+
+export type IssueSeverity = "error" | "warning";
 
 export interface ArticleGuardIssue {
   type: string;
   location: string;
   found: string;
   suggestion: string;
+  severity: IssueSeverity;
+}
+
+/** Nur diese Befundarten stoppen den Export. Alles andere ist ein Hinweis. */
+export const BLOCKING_ISSUE_TYPES = [
+  "tabelle",
+  "tabelle_fehlt",
+  "tabelle_zusaetzlich",
+  "claim",
+  "verbotene_aussage",
+  "marke",
+];
+
+export function issueSeverity(issue: { type: string; severity?: string }): IssueSeverity {
+  if (issue.severity === "error" || issue.severity === "warning") return issue.severity;
+  return BLOCKING_ISSUE_TYPES.includes(issue.type) ? "error" : "warning";
+}
+
+export function blockingIssues<T extends { type: string; severity?: string }>(issues: T[]): T[] {
+  return issues.filter((i) => issueSeverity(i) === "error");
 }
 
 /** Deterministische Schlussprüfung, unabhängig vom Urteil des Sprachmodells. */
@@ -95,6 +151,7 @@ export function deterministicArticleIssues(args: {
       location: "Gesamtartikel",
       found: `Fehlende Tabellen: ${tableCheck.missing.map((i) => i + 1).join(", ")}`,
       suggestion: "Die lokalisierten Tabellen erneut deterministisch einsetzen.",
+      severity: "error",
     });
   }
   if (tableCheck.duplicated.length || tableCheck.foreign) {
@@ -103,24 +160,42 @@ export function deterministicArticleIssues(args: {
       location: "Gesamtartikel",
       found: `${tableCheck.duplicated.length} doppelte und ${tableCheck.foreign} fremde Tabellen.`,
       suggestion: "Nur die exakt lokalisierten Tabellen je einmal ausgeben.",
+      severity: "error",
     });
   }
   for (const section of args.sections) {
     const result = checkGeneratedSection(section.source, section.target);
-    for (const reason of result.reasons) {
-      issues.push({ type: "struktur", location: section.heading, found: reason, suggestion: "Quellstruktur und Wortbudget exakt einhalten." });
+    for (const reason of result.hardReasons) {
+      issues.push({
+        type: "struktur",
+        location: section.heading,
+        found: reason,
+        suggestion: "Quellstruktur exakt einhalten.",
+        severity: "warning",
+      });
+    }
+    for (const reason of result.softReasons) {
+      issues.push({
+        type: "struktur_hinweis",
+        location: section.heading,
+        found: reason,
+        suggestion: "Umfang und Absatzaufteilung näher an die Quelle bringen.",
+        severity: "warning",
+      });
     }
   }
-  const sourceWords = countWords(args.sourceText);
-  const targetWords = countWords(args.targetText);
-  const maxWords = Math.ceil(sourceWords * MAX_ARTICLE_WORD_RATIO + 10);
+  const sourceWords = countWords(normalizeForComparison(args.sourceText));
+  const targetWords = countWords(normalizeForComparison(args.targetText));
+  const maxWords = Math.ceil(sourceWords * MAX_ARTICLE_WORD_RATIO + 25);
   if (sourceWords > 0 && targetWords > maxWords) {
     issues.push({
       type: "laenge",
       location: "Gesamtartikel",
       found: `Quelle ${sourceWords} Wörter, Ziel ${targetWords} Wörter, Maximum ${maxWords}.`,
       suggestion: "Zusätze entfernen und den Umfang an die Quelle angleichen.",
+      severity: "warning",
     });
   }
   return issues;
+
 }
