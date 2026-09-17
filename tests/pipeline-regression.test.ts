@@ -180,7 +180,7 @@ describe("8 · S10 Tabellenprüfung", () => {
 
 describe("9–11 · S11 Eingabe je Abschnitt", () => {
   const sourceSections: SourceSection[] = [
-    { heading: "Steckbrief Mastiff", level: 2, text: "Der Mastiff ist eine britische Rasse …" },
+    { heading: "Steckbrief Mastiff", level: 2, text: "Der Mastiff ist eine britische Rasse …\n[TABELLE 0]" },
     { heading: "Charakter", level: 2, text: "Ruhig, wachsam und sehr anhänglich …" },
     { heading: "Pflege", level: 2, text: "Kurzes Fell, wöchentliches Bürsten …" },
   ];
