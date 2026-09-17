@@ -86,15 +86,6 @@ export function buildSectionInputs(args: {
       .map((m) => Number(m[1]))
        .filter((n) => byIndex.has(n));
 
-  let tableCursor = 0;
-  const nextFreeTable = (): number | null => {
-    while (tableCursor < sorted.length) {
-      const idx = sorted[tableCursor++]?.index;
-      if (idx != null && !assigned.has(idx)) return idx;
-    }
-    return null;
-  };
-
   const out: GenerateSectionInput[] = [];
   for (const section of plan) {
     const body = bodies.get(norm(section.de_heading));
@@ -108,10 +99,6 @@ export function buildSectionInputs(args: {
         .filter((t) => !assigned.has(t.index) && t.section_heading && norm(t.section_heading) === norm(section.de_heading))
         .map((t) => t.index);
       if (matchedByHeading.length) indices = matchedByHeading;
-      else if (section.has_table) {
-        const idx = nextFreeTable();
-        if (idx != null) indices = [idx];
-      }
     }
     indices.forEach((i) => assigned.add(i));
     const sectionTables = indices.map((i) => byIndex.get(i)).filter((t): t is NonNullable<typeof t> => Boolean(t));
