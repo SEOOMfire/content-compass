@@ -44,6 +44,18 @@ export const S10OutputSchema = z.object({
   table_markdown: z.string().min(1),
 });
 
+export const QaIssueSchema = z.object({
+  type: z.string().min(1),
+  location: z.string().default(""),
+  found: z.string().min(1),
+  suggestion: z.string().default(""),
+});
+
+/** S12 – jeder Befund muss strukturiert und auswertbar sein. */
+export const S12OutputSchema = z.object({
+  issues: z.array(QaIssueSchema).default([]),
+});
+
 export class StepSchemaError extends Error {}
 
 /** Validiert eine Schrittausgabe. Verstoß = Fehler, kein stiller Fallback. */

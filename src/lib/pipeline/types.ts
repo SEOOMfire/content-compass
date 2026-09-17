@@ -296,9 +296,9 @@ export interface JobContext {
   linkCandidates?: Record<string, { url: string; title: string; path_type: string }[]>;
   linkSelection?: { anchor: string; url: string | null; confidence?: string }[];
   verifiedLinks?: VerifiedLink[];
-  tables?: { index: number; markdown: string }[];
+  tables?: { index: number; markdown: string; section_heading?: string }[];
   content?: { heading: string; markdown: string }[];
-  qa?: unknown;
+  qa?: { issues: { type: string; location: string; found: string; suggestion: string }[] };
   exportMarkdown?: string;
 }
 

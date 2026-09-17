@@ -22,7 +22,12 @@ export async function fetchHtml(
 
 function textOf(el: HTMLElement | null | undefined): string {
   if (!el) return "";
-  return el.text.replace(/\s+/g, " ").trim();
+  return el.structuredText.replace(/\s+/g, " ").trim();
+}
+
+/** Entfernt versehentliche Markdown-Marker aus sichtbaren HTML-Überschriften. */
+export function cleanHeadingText(value: string): string {
+  return value.replace(/^\s*(?:#{1,6}\s*)+/, "").replace(/\s+/g, " ").trim();
 }
 
 function tableToMarkdown(table: HTMLElement): string {
@@ -102,7 +107,7 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
 
   root.querySelectorAll("script,style,noscript,nav,footer,header").forEach((n) => n.remove());
 
-  const h1 = textOf(main.querySelector("h1")) || null;
+  const h1 = cleanHeadingText(textOf(main.querySelector("h1"))) || null;
 
   const sections: SourceSection[] = [];
   let current: SourceSection = { heading: h1 ?? "Intro", level: 1, text: "" };
@@ -112,7 +117,7 @@ export function extractDoc(url: string, finalUrl: string, status: number, html: 
     const tag = node.tagName?.toLowerCase();
     if (tag === "h1" || tag === "h2" || tag === "h3") {
       if (current.text.trim()) sections.push(current);
-      current = { heading: textOf(node), level: Number(tag[1]), text: "" };
+      current = { heading: cleanHeadingText(textOf(node)), level: Number(tag[1]), text: "" };
     } else if (tag === "table") {
       tableHeadings[tableIdx] = current.heading;
       current.text += (current.text ? "\n" : "") + `[TABELLE ${tableIdx}]`;
