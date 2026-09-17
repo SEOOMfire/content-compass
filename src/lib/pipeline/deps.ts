@@ -49,8 +49,15 @@ export function dependencyBlocker(stepKey: string, ctx: JobContext): string | nu
       return null;
     }
     case "S12_qa":
-    case "S13_export":
       return ctx.content?.length ? null : "S11 (Content erzeugen) muss zuerst laufen.";
+    case "S13_export":
+      return !ctx.content?.length
+        ? "S11 (Content erzeugen) muss zuerst laufen."
+        : !ctx.qa
+          ? "S12 (QA) muss zuerst erfolgreich laufen."
+          : ctx.qa.issues.length
+            ? `S12 enthält ${ctx.qa.issues.length} ungelöste Qualitätsfehler.`
+            : null;
     default:
       return null;
   }

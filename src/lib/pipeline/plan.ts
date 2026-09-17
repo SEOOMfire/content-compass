@@ -14,6 +14,7 @@ export interface GenerateSectionInput {
   notes: string[];
   has_table: boolean;
   table_markdown: string | null;
+  tables: { index: number; markdown: string }[];
   written_headings: string[];
   verified_links: VerifiedLink[];
   style_profile: unknown;
@@ -56,7 +57,7 @@ function norm(s: string): string {
 export function buildSectionInputs(args: {
   plan: PlanSection[];
   sourceSections: SourceSection[];
-  tables: { index: number; markdown: string }[];
+  tables: { index: number; markdown: string; section_heading?: string }[];
   verifiedLinks: VerifiedLink[];
   styleProfile: unknown;
   market: unknown;
@@ -67,12 +68,15 @@ export function buildSectionInputs(args: {
   const levels = new Map<string, number>();
   for (const s of sourceSections) {
     const key = norm(s.heading);
-    bodies.set(key, [bodies.get(key), s.text].filter(Boolean).join("\n"));
+    if (bodies.has(key)) {
+      throw new PlanMappingError(`Die Quellüberschrift „${s.heading}“ kommt mehrfach vor und kann nicht eindeutig zugeordnet werden.`);
+    }
+    bodies.set(key, s.text);
     if (!levels.has(key)) levels.set(key, s.level);
   }
 
   const sorted = [...tables].sort((a, b) => a.index - b.index);
-  const byIndex = new Map(sorted.map((t) => [t.index, t.markdown]));
+  const byIndex = new Map(sorted.map((t) => [t.index, t]));
   const assigned = new Set<number>();
 
   // Zuordnung erfolgt deterministisch über die Positionsmarker [TABELLE n] aus S1,
@@ -80,7 +84,7 @@ export function buildSectionInputs(args: {
   const markersOf = (body: string): number[] =>
     [...body.matchAll(/\[TABELLE (\d+)\]/g)]
       .map((m) => Number(m[1]))
-      .filter((n) => byIndex.has(n));
+       .filter((n) => byIndex.has(n));
 
   let tableCursor = 0;
   const nextFreeTable = (): number | null => {
@@ -99,14 +103,19 @@ export function buildSectionInputs(args: {
       continue;
     }
     let indices = markersOf(body);
-    if (!indices.length && section.has_table) {
-      const idx = nextFreeTable();
-      if (idx != null) indices = [idx];
+    if (!indices.length) {
+      const matchedByHeading = sorted
+        .filter((t) => !assigned.has(t.index) && t.section_heading && norm(t.section_heading) === norm(section.de_heading))
+        .map((t) => t.index);
+      if (matchedByHeading.length) indices = matchedByHeading;
+      else if (section.has_table) {
+        const idx = nextFreeTable();
+        if (idx != null) indices = [idx];
+      }
     }
     indices.forEach((i) => assigned.add(i));
-    const table = indices.length
-      ? indices.map((i) => byIndex.get(i) ?? "").filter(Boolean).join("\n\n")
-      : null;
+    const sectionTables = indices.map((i) => byIndex.get(i)).filter((t): t is NonNullable<typeof t> => Boolean(t));
+    const table = sectionTables.length ? sectionTables.map((t) => t.markdown).join("\n\n") : null;
     out.push({
       de_heading: section.de_heading,
       de_body: body,
@@ -117,6 +126,7 @@ export function buildSectionInputs(args: {
       notes: section.notes ?? [],
       has_table: Boolean(table),
       table_markdown: table,
+      tables: sectionTables.map(({ index, markdown }) => ({ index, markdown })),
       written_headings: [],
       verified_links: args.verifiedLinks,
       style_profile: args.styleProfile,
@@ -124,16 +134,12 @@ export function buildSectionInputs(args: {
     });
   }
 
-  // Keine Tabelle darf verloren gehen: Rest an den letzten inhaltlichen Abschnitt.
+  // Keine Tabelle darf an einen beliebigen Abschnitt geraten.
   const leftover = sorted.filter((t) => !assigned.has(t.index));
   if (leftover.length) {
-    const target = [...out].reverse().find((s) => !s.is_toc && s.action !== "streichen") ?? out[0];
-    if (target) {
-      target.table_markdown = [target.table_markdown, ...leftover.map((t) => t.markdown)]
-        .filter(Boolean)
-        .join("\n\n");
-      target.has_table = true;
-    }
+    throw new PlanMappingError(
+      `Tabelle(n) ${leftover.map((t) => t.index + 1).join(", ")} konnten keinem Quellabschnitt eindeutig zugeordnet werden. Bitte S1 erneut ausführen.`,
+    );
   }
 
   if (unmatched.length) {
