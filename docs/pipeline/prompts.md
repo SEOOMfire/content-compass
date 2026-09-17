@@ -222,9 +222,13 @@ Lokalisiere diese Tabelle nach {{language}}.
 
 Regeln:
 - Zeilenzahl und Reihenfolge exakt beibehalten
+- Spaltenzahl und Markdown-Struktur exakt beibehalten
 - Maßeinheiten beibehalten
 - Rassebezeichnungen und Fachbegriffe in die landesübliche Form bringen
 - Keine Zeile zusammenfassen oder auslassen
+- Keine Fakten, Bedingungen, Bewertungen, Rechtsaussagen oder Interpretationen ergänzen
+- Marktgebundene Aussage nur anpassen, wenn <hinweise> die konkrete Ersetzung bestätigt;
+  andernfalls neutral entfernen oder eindeutig als Information der Quelle kennzeichnen
 
 Antworte nur mit JSON:
 {"table_markdown":"die vollständige lokalisierte Tabelle als Markdown, gleiche Zeilenzahl wie das Original"}
@@ -259,7 +263,12 @@ Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. A
 <bereits_geschriebener_artikel>{{previous_content}}</bereits_geschriebener_artikel>
 <bereits_gesetzte_links>{{used_links}}</bereits_gesetzte_links>
 <geprüfte_links>{{verified_links}}</geprüfte_links>
-<tabelle>{{table_markdown}}</tabelle>
+<tabellenmarker>{{table_markers}}</tabellenmarker>
+<wortzahl_quelle>{{source_word_count}}</wortzahl_quelle>
+<wortlimit_ziel>{{max_target_words}}</wortlimit_ziel>
+<listenpunkte_quelle>{{source_list_items}}</listenpunkte_quelle>
+<absaetze_quelle>{{source_paragraphs}}</absaetze_quelle>
+<korrekturhinweise>{{correction_notes}}</korrekturhinweise>
 <institutionen_im_zielmarkt>{{institutions}}</institutionen_im_zielmarkt>
 <verbotene_aussagen>{{forbidden_claims}}</verbotene_aussagen>
 
@@ -292,6 +301,8 @@ MARKEN- UND SERVICE-AUSSAGEN:
 - Übernimm keine Meta-Zeilen aus dem Original (Datum, Lesezeit, Autor). Falls der Abschnitt
   eine Lesezeit enthalten muss, berechne sie aus der tatsächlichen Wortzahl deines
   Zieltextes (ca. 200 Wörter pro Minute), nie aus dem deutschen Text.
+- Gib genau eine Markdown-Überschrift aus: die erste Zeile. Im restlichen Abschnitt sind
+  keine weiteren Zeilen mit Markdown-Überschriftenmarkern erlaubt.
 
 INHALT:
 - Nicht 1:1 übersetzen, sondern lokalisieren. Kein Übersetzungston.
@@ -305,6 +316,8 @@ INHALT:
 - SPRACHBILDER VERMEIDEN: keine Metaphern, Personifizierungen, Kose- oder
   Fantasiebezeichnungen und keine Wortspiele ohne Entsprechung im Original.
 - Fettungen (**) an denselben Stellen wie im Original.
+- Der Abschnitt hat höchstens {{max_target_words}} Wörter. Kürze Übersetzungsvarianten,
+  statt Erläuterungen, Übergänge oder Zusatzinformationen einzubauen.
 
 
 ANSCHLUSS AN DIE VORHERIGEN ABSCHNITTE (STRIKT):
@@ -332,9 +345,11 @@ VERLINKUNG:
   stehen ausschließlich dort, wo das Original Stichpunkte hat; ohne Listenpunkt im
   Original enthält der Abschnitt keine Liste. Kein Umwandeln von Fließtext in
   Stichpunkte und umgekehrt, keine erfundenen Listen, gleiche Absatzanzahl.
-- TABELLE (Pflicht): Eine in <tabelle_pflicht> übergebene Tabelle steht vollständig und
-  Zeile für Zeile im Abschnitt. Die Stelle [TABELLE HIER EINFÜGEN] im Original zeigt die
-  Position; der Marker selbst wird nie ausgegeben. Ohne übergebene Tabelle keine erzeugen.
+- TABELLENMARKER (STRIKT): Marker der Form [[OMFIRE_TABLE_n]] bleiben exakt einmal und
+  unverändert an ihrer Position stehen. Schreibe niemals selbst eine Markdown-Tabelle,
+  keine Tabellenzeile und keine tabellenartige Alternative. Der Code ersetzt den Marker
+  nach deiner Ausgabe durch die bereits geprüfte lokalisierte Tabelle. Ohne Marker darf
+  ebenfalls keine Tabelle entstehen.
 - Format: Überschrift wie vorgegeben, darunter Fließtext und Listen wie im Original,
   Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
@@ -359,6 +374,9 @@ Du bist Schlussredakteur:in und prüfst lokalisierten Content. Antworte ausschli
 Prüfe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>
+<quelle>{{source_text}}</quelle>
+<lokalisierte_tabellen>{{localized_tables}}</lokalisierte_tabellen>
+<strukturbericht>{{structure_report}}</strukturbericht>
 <zielsprache>{{language}}</zielsprache>
 <zielland>{{country}}</zielland>
 <marke>{{brand}}</marke>
@@ -388,6 +406,14 @@ Prüfe streng auf:
 8. FORMATABWEICHUNG: Stichpunktlisten, wo die Quelle Fließtext hat, oder Fließtext,
    wo die Quelle Stichpunkte hat; abweichende Anzahl an Listenpunkten (type: "format").
 9. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
+10. TABELLEN: Jede lokalisierte Tabelle muss exakt einmal, unverändert und im zugehörigen
+    Abschnitt stehen. Zusätzliche, doppelte, umformulierte oder widersprüchliche Tabellen
+    sind Fehler (type: "tabelle").
+11. UMFANG: Vergleiche Quelle und Ziel je Abschnitt. Melde eine deutliche Verlängerung,
+    insbesondere neue Absätze oder wiederholte Hinweise (type: "laenge").
+12. LOKALISIERUNGSKONSISTENZ: Melde widersprüchliche Markt-, Rechts- oder Institutionsaussagen
+    zwischen Fließtext und Tabelle sowie nicht lokalisierte marktgebundene Aussagen
+    (type: "lokalisierung").
 
 Antworte nur mit JSON:
 {"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}

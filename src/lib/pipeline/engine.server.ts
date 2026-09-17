@@ -34,6 +34,7 @@ import {
   S6OutputSchema,
   S8OutputSchema,
   S10OutputSchema,
+  S12OutputSchema,
   validateStepData,
 } from "./schemas";
 import {
@@ -47,7 +48,15 @@ import {
 } from "./paths";
 import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
-import { checkLocalizedTable, missingTableIndices } from "./tables";
+import { checkExactTables, checkLocalizedTable, stripMarkdownTables } from "./tables";
+import {
+  checkGeneratedSection,
+  countListItems,
+  countParagraphs,
+  countWords,
+  deterministicArticleIssues,
+  MAX_SECTION_WORD_RATIO,
+} from "./content-guards";
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
 
@@ -96,6 +105,16 @@ export interface StepRunResult {
   promptSnapshot?: string;
   tokensIn?: number;
   tokensOut?: number;
+}
+
+class PipelineQualityError extends Error {
+  constructor(
+    message: string,
+    readonly output: unknown,
+    readonly context: Partial<JobContext>,
+  ) {
+    super(message);
+  }
 }
 
 function chunked<T>(arr: T[], size: number): T[][] {
@@ -1424,65 +1443,87 @@ export async function runStep(
         const previousContent = content.length
           ? content.map((c) => c.markdown).join("\n\n")
           : "(noch kein Abschnitt geschrieben – dies ist der erste Abschnitt)";
-        // Vollständiges Objekt an das Modell – ungekürzt (P0-1).
-        const res = await runPrompt<string>(tpl, {
-          language: market.language,
-          language_variant: market.language_variant ?? "",
-          country: market.country ?? "",
-          institutions: market.institutions ?? {},
-          forbidden_claims: market.forbidden_claims ?? [],
-          brand: market.brand ?? "",
-          address_form: market.address_form ?? "",
-          style_profile: input.style_profile,
-          style_example: "",
-          de_section: `${hashes} ${input.de_heading}\n${input.de_body.replace(
-            /\[TABELLE \d+\]/g,
-            "[TABELLE HIER EINFÜGEN]",
-          )}`,
-          target_heading: input.target_heading,
-          heading_level: input.heading_level,
-          heading_markup: `${hashes} ${input.target_heading}`,
-          action: input.action,
-          localization_notes: input.notes.join("\n- "),
-          written_headings: written.join(", "),
-          verified_links: availableLinks(),
-          used_links: usedLinksForPrompt(),
-          previous_content: previousContent,
-          table_markdown: input.table_markdown
-            ? `<tabelle_pflicht>\n${input.table_markdown}\n</tabelle_pflicht>`
-            : "",
-        });
-        snapshots.push(res.promptSnapshot);
-        tokensIn += res.tokensIn;
-        tokensOut += res.tokensOut;
-        const raw = typeof res.data === "string" ? res.data : String(res.data);
-        let md = enforceHeadingLevel(raw.trim(), input.heading_level, input.target_heading);
-        md = md.replace(/\[TABELLE[^\]]*\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
-        // Harte Tabellenprüfung je Abschnitt: fehlt die zugeordnete Tabelle,
-        // wird sie deterministisch ergänzt statt verloren zu gehen.
-        if (input.table_markdown && missingTableIndices(md, [{ index: 0, markdown: input.table_markdown }]).length) {
-          md = `${md}\n\n${input.table_markdown}`;
+        const sourceWithMarkers = input.de_body.replace(
+          /\[TABELLE (\d+)\]/g,
+          (_match, index: string) => `[[OMFIRE_TABLE_${index}]]`,
+        );
+        const requiredMarkers = input.tables.map((table) => `[[OMFIRE_TABLE_${table.index}]]`);
+        const sourceWords = countWords(sourceWithMarkers);
+        const maxTargetWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 5);
+        let md: string | null = null;
+        let lastReasons: string[] = [];
+
+        for (let attempt = 0; attempt < 3 && md === null; attempt++) {
+          // Vollständiges Objekt an das Modell – Tabellen nur als undurchsichtige Positionsmarker.
+          const res = await runPrompt<string>(tpl, {
+            language: market.language,
+            language_variant: market.language_variant ?? "",
+            country: market.country ?? "",
+            institutions: market.institutions ?? {},
+            forbidden_claims: market.forbidden_claims ?? [],
+            brand: market.brand ?? "",
+            address_form: market.address_form ?? "",
+            style_profile: input.style_profile,
+            style_example: "",
+            de_section: `${hashes} ${input.de_heading}\n${sourceWithMarkers}`,
+            target_heading: input.target_heading,
+            heading_level: input.heading_level,
+            heading_markup: `${hashes} ${input.target_heading}`,
+            action: input.action,
+            localization_notes: input.notes.join("\n- "),
+            written_headings: written.join(", "),
+            verified_links: availableLinks(),
+            used_links: usedLinksForPrompt(),
+            previous_content: previousContent,
+            table_markers: requiredMarkers.join(", ") || "(keine)",
+            source_word_count: sourceWords,
+            max_target_words: maxTargetWords,
+            source_list_items: countListItems(sourceWithMarkers),
+            source_paragraphs: countParagraphs(sourceWithMarkers),
+            correction_notes: lastReasons.length ? lastReasons.join("\n- ") : "(erster Versuch)",
+          });
+          snapshots.push(res.promptSnapshot);
+          tokensIn += res.tokensIn;
+          tokensOut += res.tokensOut;
+          const raw = typeof res.data === "string" ? res.data : String(res.data);
+          const stripped = stripMarkdownTables(raw.trim());
+          let candidate = enforceHeadingLevel(stripped.text, input.heading_level, input.target_heading);
+          const markerProblems = requiredMarkers.filter(
+            (marker) => candidate.split(marker).length - 1 !== 1,
+          );
+          lastReasons = [];
+          if (stripped.removed.length) lastReasons.push("Das Modell hat eine eigene Tabelle erzeugt.");
+          if (markerProblems.length) lastReasons.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
+          const guard = checkGeneratedSection(sourceWithMarkers, candidate);
+          lastReasons.push(...guard.reasons);
+          if (lastReasons.length) continue;
+          for (const table of input.tables) {
+            candidate = candidate.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+          }
+          const exact = checkExactTables(candidate, input.tables);
+          if (!exact.ok) {
+            lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
+            continue;
+          }
+          md = candidate.replace(/\n{3,}/g, "\n\n").trim();
+        }
+        if (md === null) {
+          throw new Error(
+            `Abschnitt „${input.target_heading}“ verletzt nach drei Versuchen die Strukturregeln: ${lastReasons.join(" ")}`,
+          );
         }
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
       }
       if (!content.length) throw new Error("S11 hat keinen Abschnitt erzeugt.");
-      // Schlussprüfung über den Gesamttext: jede lokalisierte Tabelle muss vorkommen.
+      // Schlussprüfung: jede lokalisierte Tabelle exakt einmal, keine fremde Tabelle.
       const allTables = ctx.tables ?? [];
-      const missingAfter = missingTableIndices(
-        content.map((c) => c.markdown).join("\n\n"),
-        allTables,
-      );
-      if (missingAfter.length) {
-        const last = content[content.length - 1];
-        if (!last) throw new Error("S11: Tabellen konnten nicht eingefügt werden.");
-        last.markdown = [
-          last.markdown,
-          ...missingAfter.map((i) => allTables.find((t) => t.index === i)?.markdown ?? ""),
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+      const exact = checkExactTables(content.map((c) => c.markdown).join("\n\n"), allTables);
+      if (!exact.ok) {
+        throw new Error(
+          `S11-Tabellenprüfung fehlgeschlagen: fehlend ${exact.missing.join(", ") || "keine"}, doppelt ${exact.duplicated.join(", ") || "keine"}, fremd ${exact.foreign}.`,
+        );
       }
       return {
         output: content,
@@ -1495,20 +1536,61 @@ export async function runStep(
     }
 
     case "S12_qa": {
+      const source = requireSource(ctx);
       const full = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
       if (!full.trim()) throw new Error("Kein Content vorhanden – bitte S11 ausführen.");
+      const generated = ctx.content ?? [];
+      const planInputs = buildSectionInputs({
+        plan: ctx.plan?.sections ?? [],
+        sourceSections: source.sections,
+        tables: ctx.tables ?? [],
+        verifiedLinks: ctx.verifiedLinks ?? [],
+        styleProfile: ctx.styleProfile ?? {},
+        market: {},
+      }).filter((input) => input.action !== "streichen" && !input.is_toc);
+      const sectionPairs = planInputs.map((input) => ({
+        heading: input.target_heading,
+        source: input.de_body,
+        target: generated.find((item) => item.heading === input.target_heading)?.markdown ?? "",
+      }));
+      const deterministic = deterministicArticleIssues({
+        sourceText: source.sections.map((s) => s.text).join("\n\n"),
+        targetText: full,
+        tables: ctx.tables ?? [],
+        sections: sectionPairs,
+      });
       const tpl = await loadTemplate("qa");
-      const res = await runPrompt(tpl, {
+      const res = await runPrompt<unknown>(tpl, {
         full_text: full,
+        source_text: source.sections.map((s) => `H${s.level} ${s.heading}\n${s.text}`).join("\n\n"),
+        localized_tables: ctx.tables ?? [],
+        structure_report: sectionPairs.map((pair) => ({
+          heading: pair.heading,
+          source_words: countWords(pair.source),
+          target_words: countWords(pair.target),
+          source_list_items: countListItems(pair.source),
+          target_list_items: countListItems(pair.target),
+          source_paragraphs: countParagraphs(pair.source),
+          target_paragraphs: countParagraphs(pair.target),
+        })),
         brand: market.brand ?? "",
         forbidden_terms: market.forbidden_claims ?? [],
         institutions: market.institutions ?? {},
         country: market.country ?? "",
         language: market.language,
       });
+      const parsed = validateStepData("S12_qa", S12OutputSchema, res.data);
+      const qa = { issues: [...deterministic, ...parsed.issues] };
+      if (qa.issues.length) {
+        throw new PipelineQualityError(
+          `QA blockiert den Export: ${qa.issues.length} ungelöste Qualitätsfehler.`,
+          qa,
+          { qa },
+        );
+      }
       return {
-        output: res.data,
-        context: { qa: res.data },
+        output: qa,
+        context: { qa },
         model: res.model,
         promptSnapshot: res.promptSnapshot,
         tokensIn: res.tokensIn,
@@ -1520,11 +1602,10 @@ export async function runStep(
       const source = requireSource(ctx);
       const broken = ctx.brokenLinks ?? [];
       const bodyText = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
-      // Harte Schlussprüfung: jede Tabelle der Quelle muss im Zieltext stehen.
-      const missingTables = missingTableIndices(bodyText, ctx.tables ?? []);
-      if (missingTables.length) {
+      const exactTables = checkExactTables(bodyText, ctx.tables ?? []);
+      if (!exactTables.ok) {
         throw new Error(
-          `Tabelle(n) ${missingTables.map((i) => i + 1).join(", ")} aus der Quelle fehlen im Zieltext. Bitte S10 und S11 erneut ausführen.`,
+          `Tabellenprüfung fehlgeschlagen: fehlend ${exactTables.missing.map((i) => i + 1).join(", ") || "keine"}, doppelt ${exactTables.duplicated.map((i) => i + 1).join(", ") || "keine"}, fremd ${exactTables.foreign}. Bitte S10 und S11 erneut ausführen.`,
         );
       }
       const targetWords = bodyText.split(/\s+/).filter(Boolean).length;
@@ -1581,8 +1662,7 @@ export function enforceHeadingLevel(md: string, level: number, heading: string):
   const lines = md.split("\n");
   const idx = lines.findIndex((l) => /^\s*#{1,6}\s+\S/.test(l));
   if (idx === -1) return `${hashes} ${heading}\n\n${md}`.trim();
-  const text = (lines[idx] ?? "").replace(/^\s*#{1,6}\s+/, "").trim();
-  lines[idx] = `${hashes} ${text}`;
+  lines[idx] = `${hashes} ${heading}`;
   return lines.join("\n");
 }
 
@@ -1661,6 +1741,21 @@ export async function executeStep(jobId: string, stepKey: string) {
   } catch (err) {
     collectRecordedVars();
     const message = err instanceof Error ? err.message : "Unbekannter Fehler";
+    if (err instanceof PipelineQualityError) {
+      const failedContext = { ...context, ...err.context };
+      await supabaseAdmin
+        .from("jobs")
+        .update({ context: failedContext as never, updated_at: new Date().toISOString() })
+        .eq("id", jobId);
+      await upsertStep(jobId, def.key, def.order, {
+        status: "error",
+        error: message,
+        output: err.output as never,
+        duration_ms: Date.now() - started,
+      });
+      await syncJobStatus(jobId);
+      return { ok: false as const, error: message };
+    }
     await upsertStep(jobId, def.key, def.order, {
       status: "error",
       error: message,
