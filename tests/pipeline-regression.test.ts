@@ -597,12 +597,12 @@ describe("21 · Weiche Abweichungen stoppen den Lauf nicht", () => {
   const source = "Absatz eins mit Inhalt.\n\nAbsatz zwei mit Inhalt.\n\n[TABELLE 1]";
   const target = "## Titel\n\nAkapit jeden z trescia.\n\nAkapit dwa z trescia.\n\n[[OMFIRE_TABLE_1]]";
 
-  it("Tabellenmarker und Tabellen werden beim Vergleich gleich behandelt", () => {
+  test("Tabellenmarker und Tabellen werden beim Vergleich gleich behandelt", () => {
     const guard = checkGeneratedSection(source, target);
     expect(guard.hardReasons.length).toBe(0);
   });
 
-  it("Umfang und Absatzabweichung sind Hinweise, keine Blocker", () => {
+  test("Umfang und Absatzabweichung sind Hinweise, keine Blocker", () => {
     const issues = deterministicArticleIssues({
       sourceText: source,
       targetText: target,
