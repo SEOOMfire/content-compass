@@ -380,7 +380,14 @@ Prüfe streng auf:
 5. META: Lesezeit oder Datum offensichtlich aus dem deutschen Original übernommen.
    Berechne die Lesezeit aus der Wortzahl des vorliegenden Textes (ca. 200 Wörter/Minute)
    und melde eine Abweichung (type: "lesezeit") mit dem korrekten Wert als suggestion.
-6. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
+6. INHALTLICHE ZUSÄTZE: Aussagen, Beispiele, Begriffe, Einschränkungen, Bedingungen,
+   Warnungen oder Empfehlungen, die über den Inhalt der Quelle hinausgehen oder deren
+   Reichweite verändern (type: "inhaltlicher_zusatz").
+7. SPRACHBILDER: Metaphern, Personifizierungen, Kose- oder Fantasiebezeichnungen und
+   Wortspiele ohne Entsprechung in der Quelle (type: "sprachbild").
+8. FORMATABWEICHUNG: Stichpunktlisten, wo die Quelle Fließtext hat, oder Fließtext,
+   wo die Quelle Stichpunkte hat; abweichende Anzahl an Listenpunkten (type: "format").
+9. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
 
 Antworte nur mit JSON:
 {"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}
