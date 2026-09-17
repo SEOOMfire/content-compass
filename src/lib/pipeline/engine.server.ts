@@ -50,13 +50,17 @@ import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
 import { checkExactTables, checkLocalizedTable, stripMarkdownTables } from "./tables";
 import {
+  blockingIssues,
   checkGeneratedSection,
   countListItems,
   countParagraphs,
   countWords,
   deterministicArticleIssues,
+  issueSeverity,
+  normalizeForComparison,
   MAX_SECTION_WORD_RATIO,
 } from "./content-guards";
+
 import { buildSectionInputs } from "./plan";
 import { dependencyBlocker } from "./deps";
 
