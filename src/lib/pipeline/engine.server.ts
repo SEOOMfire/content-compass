@@ -1385,6 +1385,8 @@ export async function runStep(
       const written: string[] = [];
       const content: { heading: string; markdown: string }[] = [];
       const snapshots: string[] = [];
+      const softWarnings: string[] = [];
+
       let tokensIn = 0;
       let tokensOut = 0;
 
