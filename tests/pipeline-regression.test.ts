@@ -279,7 +279,13 @@ describe("14 · Abhängigkeiten (Link-Pool statt Gesamtindex)", () => {
       }),
     ).toContain("S6");
     expect(dependencyBlocker("S12_qa", {})).toContain("S11");
-    expect(dependencyBlocker("S13_export", { content: [{ heading: "x", markdown: "y" }] })).toBeNull();
+    expect(dependencyBlocker("S13_export", { content: [{ heading: "x", markdown: "y" }] })).toContain("S12");
+    expect(
+      dependencyBlocker("S13_export", {
+        content: [{ heading: "x", markdown: "y" }],
+        qa: { issues: [] },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -547,7 +553,14 @@ describe("20 · Harte Content-Schutzregeln", () => {
   test("doppelte Quellüberschriften werden nicht still zusammengeführt", () => {
     expect(() =>
       buildSectionInputs({
-        plan: [plan[0]!],
+        plan: [{
+          de_heading: "Steckbrief",
+          target_heading: "Profil",
+          action: "uebersetzen",
+          notes: [],
+          has_table: false,
+          anchors: [],
+        }],
         sourceSections: [
           { heading: "Steckbrief", level: 2, text: "A" },
           { heading: "Steckbrief", level: 2, text: "B" },
