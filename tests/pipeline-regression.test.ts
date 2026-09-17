@@ -35,6 +35,7 @@ import {
   deterministicArticleIssues,
 } from "../src/lib/pipeline/content-guards";
 import { cleanHeadingText } from "../src/lib/pipeline/extract.server";
+import { extractDoc } from "../src/lib/pipeline/extract.server";
 import {
   S2OutputSchema,
   S6OutputSchema,
@@ -175,6 +176,11 @@ describe("8 · S10 Tabellenprüfung", () => {
   test("korrekte Lokalisierung wird akzeptiert", () => {
     expect(checkLocalizedTable(de, pl, "Polnisch").ok).toBe(true);
     expect(tableRows(pl)).toHaveLength(tableRows(de).length);
+  });
+
+  test("abweichende Spaltenzahl wird abgelehnt", () => {
+    const malformed = "| Pochodzenie |\n| --- |\n| Wielkość |";
+    expect(checkLocalizedTable(de, malformed, "Polnisch").ok).toBe(false);
   });
 });
 
@@ -548,6 +554,17 @@ describe("20 · Harte Content-Schutzregeln", () => {
 
   test("Überschriftentext verliert doppelte Markdown-Marker", () => {
     expect(cleanHeadingText("## # Profil Tier")).toBe("Profil Tier");
+  });
+
+  test("verschachtelte Überschriftenteile behalten sichtbare Wortabstände", () => {
+    const doc = extractDoc(
+      "https://example.test/source",
+      "https://example.test/source",
+      200,
+      "<main><h1><span>Profil</span><strong> Tier</strong></h1><p>Text</p></main>",
+    );
+    expect(doc.h1).toBe("Profil Tier");
+    expect(doc.sections[0]?.heading).toBe("Profil Tier");
   });
 
   test("doppelte Quellüberschriften werden nicht still zusammengeführt", () => {

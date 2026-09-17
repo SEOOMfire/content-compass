@@ -11,6 +11,10 @@ export function sameRowCount(a: string, b: string): boolean {
   return tableRows(a).length === tableRows(b).length;
 }
 
+function columnCounts(md: string): number[] {
+  return tableRows(md).map((row) => row.replace(/^\||\|$/g, "").split(/(?<!\\)\|/).length);
+}
+
 function normalize(md: string): string {
   return md.replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -118,6 +122,9 @@ export function checkLocalizedTable(
       ok: false,
       reason: `Zeilenzahl weicht ab (Original ${tableRows(original).length}, Ausgabe ${tableRows(localized).length}).`,
     };
+  }
+  if (JSON.stringify(columnCounts(original)) !== JSON.stringify(columnCounts(localized))) {
+    return { ok: false, reason: "Spaltenzahl oder Tabellenstruktur weicht vom Original ab." };
   }
   const isGerman = /deutsch|german/i.test(language);
   if (!isGerman && normalize(original) === normalize(localized)) {
