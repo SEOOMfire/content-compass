@@ -295,11 +295,17 @@ MARKEN- UND SERVICE-AUSSAGEN:
 
 INHALT:
 - Nicht 1:1 übersetzen, sondern lokalisieren. Kein Übersetzungston.
-- Ansprechender, freundlicher, lifestyle-orientierter Ton für einen Tierpflege-Blog.
+- Ansprechender, freundlicher, lifestyle-orientierter Ton für einen Tierpflege-Blog,
+  ohne Füllwörter, Ausschmückungen oder bildhafte Vergleiche.
 - Alle inhaltlichen Kernaussagen, Checklisten, Material- und Produkthinweise erhalten.
-- Keine Fakten erfinden, die nicht im Original stehen — außer die Lokalisierungshinweise
-  fordern es ausdrücklich.
+- KEINE INHALTLICHEN ZUSÄTZE: Jede Aussage muss sich einem Satz des Originals zuordnen
+  lassen. Keine zusätzlichen Beispiele, Begriffe, Aufzählungsglieder oder Kategorien;
+  keine ergänzten Einschränkungen, Bedingungen, Warnungen, Empfehlungen oder
+  Voraussetzungen. Aussagen werden weder abgeschwächt noch verschärft.
+- SPRACHBILDER VERMEIDEN: keine Metaphern, Personifizierungen, Kose- oder
+  Fantasiebezeichnungen und keine Wortspiele ohne Entsprechung im Original.
 - Fettungen (**) an denselben Stellen wie im Original.
+
 
 ANSCHLUSS AN DIE VORHERIGEN ABSCHNITTE (STRIKT):
 - Die Abschnitte werden von oben nach unten geschrieben. In <bereits_geschriebener_artikel>
@@ -322,8 +328,10 @@ VERLINKUNG:
   Ziel ist ein Entwurmungsartikel), formuliere den Ankertext auf das tatsächliche
   Thema der Zielseite um oder lass den Link weg. Lieber kein Link als ein irreführender.
 - FORMAT EXAKT BEIBEHALTEN: Absätze bleiben Absätze, Listenpunkte (im Original mit
-  "- " markiert) bleiben Listenpunkte – gleiche Reihenfolge und Anzahl. Kein Umwandeln
-  von Fließtext in Stichpunkte und umgekehrt, keine erfundenen Listen.
+  "- " markiert) bleiben Listenpunkte – gleiche Reihenfolge und Anzahl. Stichpunkte
+  stehen ausschließlich dort, wo das Original Stichpunkte hat; ohne Listenpunkt im
+  Original enthält der Abschnitt keine Liste. Kein Umwandeln von Fließtext in
+  Stichpunkte und umgekehrt, keine erfundenen Listen, gleiche Absatzanzahl.
 - TABELLE (Pflicht): Eine in <tabelle_pflicht> übergebene Tabelle steht vollständig und
   Zeile für Zeile im Abschnitt. Die Stelle [TABELLE HIER EINFÜGEN] im Original zeigt die
   Position; der Marker selbst wird nie ausgegeben. Ohne übergebene Tabelle keine erzeugen.
@@ -372,7 +380,14 @@ Prüfe streng auf:
 5. META: Lesezeit oder Datum offensichtlich aus dem deutschen Original übernommen.
    Berechne die Lesezeit aus der Wortzahl des vorliegenden Textes (ca. 200 Wörter/Minute)
    und melde eine Abweichung (type: "lesezeit") mit dem korrekten Wert als suggestion.
-6. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
+6. INHALTLICHE ZUSÄTZE: Aussagen, Beispiele, Begriffe, Einschränkungen, Bedingungen,
+   Warnungen oder Empfehlungen, die über den Inhalt der Quelle hinausgehen oder deren
+   Reichweite verändern (type: "inhaltlicher_zusatz").
+7. SPRACHBILDER: Metaphern, Personifizierungen, Kose- oder Fantasiebezeichnungen und
+   Wortspiele ohne Entsprechung in der Quelle (type: "sprachbild").
+8. FORMATABWEICHUNG: Stichpunktlisten, wo die Quelle Fließtext hat, oder Fließtext,
+   wo die Quelle Stichpunkte hat; abweichende Anzahl an Listenpunkten (type: "format").
+9. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
 
 Antworte nur mit JSON:
 {"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}
