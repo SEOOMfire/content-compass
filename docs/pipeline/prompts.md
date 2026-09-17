@@ -295,11 +295,17 @@ MARKEN- UND SERVICE-AUSSAGEN:
 
 INHALT:
 - Nicht 1:1 übersetzen, sondern lokalisieren. Kein Übersetzungston.
-- Ansprechender, freundlicher, lifestyle-orientierter Ton für einen Tierpflege-Blog.
+- Ansprechender, freundlicher, lifestyle-orientierter Ton für einen Tierpflege-Blog,
+  ohne Füllwörter, Ausschmückungen oder bildhafte Vergleiche.
 - Alle inhaltlichen Kernaussagen, Checklisten, Material- und Produkthinweise erhalten.
-- Keine Fakten erfinden, die nicht im Original stehen — außer die Lokalisierungshinweise
-  fordern es ausdrücklich.
+- KEINE INHALTLICHEN ZUSÄTZE: Jede Aussage muss sich einem Satz des Originals zuordnen
+  lassen. Keine zusätzlichen Beispiele, Begriffe, Aufzählungsglieder oder Kategorien;
+  keine ergänzten Einschränkungen, Bedingungen, Warnungen, Empfehlungen oder
+  Voraussetzungen. Aussagen werden weder abgeschwächt noch verschärft.
+- SPRACHBILDER VERMEIDEN: keine Metaphern, Personifizierungen, Kose- oder
+  Fantasiebezeichnungen und keine Wortspiele ohne Entsprechung im Original.
 - Fettungen (**) an denselben Stellen wie im Original.
+
 
 ANSCHLUSS AN DIE VORHERIGEN ABSCHNITTE (STRIKT):
 - Die Abschnitte werden von oben nach unten geschrieben. In <bereits_geschriebener_artikel>
