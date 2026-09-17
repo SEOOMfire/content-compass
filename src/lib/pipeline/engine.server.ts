@@ -1582,15 +1582,20 @@ export async function runStep(
         full_text: full,
         source_text: source.sections.map((s) => `H${s.level} ${s.heading}\n${s.text}`).join("\n\n"),
         localized_tables: ctx.tables ?? [],
-        structure_report: sectionPairs.map((pair) => ({
-          heading: pair.heading,
-          source_words: countWords(pair.source),
-          target_words: countWords(pair.target),
-          source_list_items: countListItems(pair.source),
-          target_list_items: countListItems(pair.target),
-          source_paragraphs: countParagraphs(pair.source),
-          target_paragraphs: countParagraphs(pair.target),
-        })),
+        structure_report: sectionPairs.map((pair) => {
+          const src = normalizeForComparison(pair.source);
+          const tgt = normalizeForComparison(pair.target);
+          return {
+            heading: pair.heading,
+            source_words: countWords(src),
+            target_words: countWords(tgt),
+            source_list_items: countListItems(src),
+            target_list_items: countListItems(tgt),
+            source_paragraphs: countParagraphs(src),
+            target_paragraphs: countParagraphs(tgt),
+          };
+        }),
+
         brand: market.brand ?? "",
         forbidden_terms: market.forbidden_claims ?? [],
         institutions: market.institutions ?? {},
