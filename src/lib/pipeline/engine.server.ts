@@ -1594,10 +1594,19 @@ export async function runStep(
         language: market.language,
       });
       const parsed = validateStepData("S12_qa", S12OutputSchema, res.data);
-      const qa = { issues: [...deterministic, ...parsed.issues] };
-      if (qa.issues.length) {
+      const all = [...deterministic, ...parsed.issues].map((issue) => ({
+        ...issue,
+        severity: issueSeverity(issue),
+      }));
+      const blocking = blockingIssues(all);
+      const qa = {
+        issues: all,
+        blocking: blocking.length,
+        warnings: all.length - blocking.length,
+      };
+      if (blocking.length) {
         throw new PipelineQualityError(
-          `QA blockiert den Export: ${qa.issues.length} ungelöste Qualitätsfehler.`,
+          `QA blockiert den Export: ${blocking.length} schwerwiegende Fehler (${qa.warnings} Hinweise).`,
           qa,
           { qa },
         );
@@ -1605,6 +1614,7 @@ export async function runStep(
       return {
         output: qa,
         context: { qa },
+
         model: res.model,
         promptSnapshot: res.promptSnapshot,
         tokensIn: res.tokensIn,
