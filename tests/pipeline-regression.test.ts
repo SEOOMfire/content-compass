@@ -31,9 +31,11 @@ import {
 } from "../src/lib/pipeline/tables";
 import { buildSectionInputs, PlanMappingError } from "../src/lib/pipeline/plan";
 import {
+  blockingIssues,
   checkGeneratedSection,
   deterministicArticleIssues,
 } from "../src/lib/pipeline/content-guards";
+
 import { cleanHeadingText } from "../src/lib/pipeline/extract.server";
 import { extractDoc } from "../src/lib/pipeline/extract.server";
 import {
