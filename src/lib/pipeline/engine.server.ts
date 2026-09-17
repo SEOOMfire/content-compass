@@ -1451,6 +1451,7 @@ export async function runStep(
         const sourceWords = countWords(sourceWithMarkers);
         const maxTargetWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 5);
         let md: string | null = null;
+        let fallback: string | null = null;
         let lastReasons: string[] = [];
 
         for (let attempt = 0; attempt < 3 && md === null; attempt++) {
@@ -1491,27 +1492,38 @@ export async function runStep(
           const markerProblems = requiredMarkers.filter(
             (marker) => candidate.split(marker).length - 1 !== 1,
           );
-          lastReasons = [];
-          if (stripped.removed.length) lastReasons.push("Das Modell hat eine eigene Tabelle erzeugt.");
-          if (markerProblems.length) lastReasons.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
           const guard = checkGeneratedSection(sourceWithMarkers, candidate);
-          lastReasons.push(...guard.reasons);
-          if (lastReasons.length) continue;
-          for (const table of input.tables) {
-            candidate = candidate.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+          const hard: string[] = [...guard.hardReasons];
+          if (stripped.removed.length) hard.push("Das Modell hat eine eigene Tabelle erzeugt.");
+          if (markerProblems.length) hard.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
+          lastReasons = [...hard, ...guard.softReasons];
+
+          if (!markerProblems.length) {
+            for (const table of input.tables) {
+              candidate = candidate.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+            }
+            const exact = checkExactTables(candidate, input.tables);
+            if (!exact.ok) {
+              hard.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
+              lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
+            } else if (!hard.length) {
+              const cleaned = candidate.replace(/\n{3,}/g, "\n\n").trim();
+              // Weiche Abweichungen: einmal nachbessern lassen, sonst übernehmen und protokollieren.
+              if (!guard.softReasons.length) md = cleaned;
+              else fallback = cleaned;
+            }
           }
-          const exact = checkExactTables(candidate, input.tables);
-          if (!exact.ok) {
-            lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
-            continue;
-          }
-          md = candidate.replace(/\n{3,}/g, "\n\n").trim();
+        }
+        if (md === null && fallback !== null) {
+          md = fallback;
+          softWarnings.push(`„${input.target_heading}“: ${lastReasons.join(" ")}`);
         }
         if (md === null) {
           throw new Error(
             `Abschnitt „${input.target_heading}“ verletzt nach drei Versuchen die Strukturregeln: ${lastReasons.join(" ")}`,
           );
         }
+
         written.push(input.target_heading);
         content.push({ heading: input.target_heading, markdown: md });
         trackLinks(md);
