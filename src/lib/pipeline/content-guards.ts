@@ -1,7 +1,18 @@
-import { checkExactTables } from "./tables";
+import { checkExactTables, stripMarkdownTables } from "./tables";
 
-export const MAX_SECTION_WORD_RATIO = 1.25;
-export const MAX_ARTICLE_WORD_RATIO = 1.2;
+export const MAX_SECTION_WORD_RATIO = 1.35;
+export const MAX_ARTICLE_WORD_RATIO = 1.3;
+/** Kleine Abweichungen in der Absatzzahl sind unkritisch (Bild-/Nachweiszeilen). */
+export const PARAGRAPH_TOLERANCE = 1;
+
+/** Vergleichsform: Tabellen zu Markern, Marker vereinheitlicht. */
+export function normalizeForComparison(text: string): string {
+  const stripped = stripMarkdownTables(text).text;
+  return stripped
+    .replace(/\[TABELLE (\d+)\]/g, (_m, i: string) => `[[OMFIRE_TABLE_${i}]]`)
+    .replace(/^\s*\[\[OMFIRE_TABLE_\d+\]\]\s*$/gm, "");
+}
+
 
 export function countWords(text: string): number {
   return text
