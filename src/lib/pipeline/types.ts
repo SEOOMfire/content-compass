@@ -298,7 +298,19 @@ export interface JobContext {
   verifiedLinks?: VerifiedLink[];
   tables?: { index: number; markdown: string; section_heading?: string }[];
   content?: { heading: string; markdown: string }[];
-  qa?: { issues: { type: string; location: string; found: string; suggestion: string }[] };
+  qa?: {
+    issues: {
+      type: string;
+      location: string;
+      found: string;
+      suggestion: string;
+      severity?: "error" | "warning";
+    }[];
+    blocking?: number;
+    warnings?: number;
+  };
+  contentWarnings?: string[];
+
   exportMarkdown?: string;
 }
 
