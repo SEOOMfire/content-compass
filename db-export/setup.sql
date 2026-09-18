@@ -1980,10 +1980,10 @@ INSERT INTO public.user_roles VALUES ('b4b359b4-da0a-4037-9f74-e0ab2022f887', '9
 -- 13.3 link_pool, verified_links, jobs, job_steps
 -- Diese Daten sind zu umfangreich fuer diese Datei (zusammen ueber 20 MB)
 -- und liegen als separate Dateien daneben:
---   db-export/optional/link_pool.sql
---   db-export/optional/verified_links.sql
---   db-export/optional/jobs.sql
---   db-export/optional/job_steps.sql
+--   db-export/optional/link_pool.sql.gz (vorher entpacken: gunzip -k)
+--   db-export/optional/verified_links.sql.gz (vorher entpacken: gunzip -k)
+--   db-export/optional/jobs.sql.gz (vorher entpacken: gunzip -k)
+--   db-export/optional/job_steps.sql.gz (vorher entpacken: gunzip -k)
 -- Reihenfolge beim Import: markets -> jobs -> job_steps -> verified_links,
 -- link_pool kann jederzeit nach markets importiert werden.
 -- Nur einspielen, wenn Historie bzw. gelernte Links uebernommen werden sollen.
