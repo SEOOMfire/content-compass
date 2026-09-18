@@ -8,17 +8,17 @@ Platzhalter in geschweiften Klammern werden vor dem Absenden durch echte Werte e
 
 | Schritt | Schlüssel | Modell | Temperatur | max. Token | Format |
 | --- | --- | --- | --- | --- | --- |
-| S2 · Ziel-Slug vorschlagen | `resolve_target_slug` | google/gemini-3.7-flash | 0,3 | 1000 | JSON |
-| S4 · Vergleich DE ↔ Ziel | `compare` | google/gemini-3.7-flash | 0,2 | 2000 | JSON |
-| S5 · Stilprofil | `style_profile` | google/gemini-3.7-flash | 0,3 | 2000 | JSON |
-| S6 · Lokalisierungsplan | `localization_plan` | openai/gpt-5.5 | 0,3 | 8000 | JSON |
-| S8 · Linkauswahl | `link_select` | google/gemini-3.7-flash | 0,1 | 1500 | JSON |
-| S10 · Tabellen lokalisieren | `localize_table` | google/gemini-3.7-flash | 0,2 | 4000 | JSON |
-| S11 · Content erzeugen | `generate_content` | openai/gpt-5.5 | 0,6 | 6000 | Text |
-| S12 · QA | `qa` | google/gemini-3.7-flash | 0,2 | 4000 | JSON |
-| S7b · SERP-Suchanfragen | `serp_gap_queries` | google/gemini-3.7-flash | 0,4 | 1500 | JSON |
-| S7b · SERP-Treffer auswählen | `serp_gap_select` | google/gemini-3.7-flash | 0,2 | 2000 | JSON |
-| S7c · SERP-Linkchancen | `serp_opportunity_queries` | google/gemini-3.7-flash | 0,4 | 2000 | JSON |
+| S2 · Ziel-Slug vorschlagen | `resolve_target_slug` | gpt-4o-mini | 0,3 | 1000 | JSON |
+| S4 · Vergleich DE ↔ Ziel | `compare` | gpt-4o-mini | 0,2 | 2000 | JSON |
+| S5 · Stilprofil | `style_profile` | gpt-4o-mini | 0,3 | 2000 | JSON |
+| S6 · Lokalisierungsplan | `localization_plan` | gpt-4o | 0,3 | 8000 | JSON |
+| S8 · Linkauswahl | `link_select` | gpt-4o-mini | 0,1 | 1500 | JSON |
+| S10 · Tabellen lokalisieren | `localize_table` | gpt-4o-mini | 0,2 | 4000 | JSON |
+| S11 · Content erzeugen | `generate_content` | gpt-4o | 0,6 | 6000 | Text |
+| S12 · QA | `qa` | gpt-4o-mini | 0,2 | 4000 | JSON |
+| S7b · SERP-Suchanfragen | `serp_gap_queries` | gpt-4o-mini | 0,4 | 1500 | JSON |
+| S7b · SERP-Treffer auswählen | `serp_gap_select` | gpt-4o-mini | 0,2 | 2000 | JSON |
+| S7c · SERP-Linkchancen | `serp_opportunity_queries` | gpt-4o-mini | 0,4 | 2000 | JSON |
 
 S1, S3, S7a, S7, S9 und S13 arbeiten ohne KI.
 
@@ -503,7 +503,7 @@ Bereits gestellte Suchanfragen (nicht wiederholen):
 
 Wird nur aufgerufen, wenn in S3 Stufe 3 Verzeichnissegmente fehlen. Die Vorschläge werden nie ungeprüft verwendet: jede daraus gebaute Verzeichnis-Adresse wird live abgerufen, und nur eine Adresse mit HTTP 200 wird gespeichert.
 
-- **Modell:** `google/gemini-3.7-flash` · **Temperatur:** 0.3 · **Max. Tokens:** 1000 · **Format:** JSON
+- **Modell:** `gpt-4o-mini` · **Temperatur:** 0.3 · **Max. Tokens:** 1000 · **Format:** JSON
 
 **System**
 

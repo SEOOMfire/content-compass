@@ -1,4 +1,4 @@
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
+const BASE_URL = (process.env["OPENAI_BASE_URL"] || "https://api.openai.com/v1").replace(/\/+$/, "");
 
 export interface PromptTemplateRow {
   step_key: string;
@@ -40,9 +40,14 @@ export function collectRecordedVars(): RecordedPromptVars[] {
 }
 
 function apiKey(): string {
-  const key = process.env["LOVABLE_API_KEY"];
-  if (!key) throw new Error("LOVABLE_API_KEY fehlt – KI-Gateway nicht konfiguriert.");
+  const key = process.env["OPENAI_API_KEY"];
+  if (!key) throw new Error("OPENAI_API_KEY fehlt – OpenAI-API nicht konfiguriert.");
   return key;
+}
+
+/** Entfernt ein optionales Anbieter-Präfix ("openai/gpt-4o" → "gpt-4o"). */
+function modelId(model: string): string {
+  return model.replace(/^[a-z0-9_-]+\//i, "");
 }
 
 export interface Usage {
@@ -57,7 +62,7 @@ async function callChat(
   temperature: number,
   maxTokens: number,
 ): Promise<{ text: string; usage: Usage }> {
-  const res = await fetch(`${GATEWAY}/chat/completions`, {
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey()}` },
     body: JSON.stringify({
@@ -84,67 +89,8 @@ async function callChat(
   };
 }
 
-async function callResponses(
-  model: string,
-  system: string,
-  user: string,
-): Promise<{ text: string; usage: Usage }> {
-  const res = await fetch(`${GATEWAY}/responses`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "Lovable-API-Key": apiKey(),
-      "X-Lovable-AIG-SDK": "fetch",
-    },
-    body: JSON.stringify({
-      model,
-      instructions: system,
-      input: user,
-      stream: true,
-      reasoning: { effort: "medium", summary: "auto" },
-    }),
-  });
-  if (!res.ok) throw await gatewayError(res);
-  const reader = res.body?.getReader();
-  const usage: Usage = { tokensIn: 0, tokensOut: 0 };
-  if (!reader) return { text: "", usage };
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let text = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const line = part.split("\n").find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const evt = JSON.parse(payload) as {
-          type?: string;
-          delta?: string;
-          response?: { usage?: { input_tokens?: number; output_tokens?: number } };
-        };
-        if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
-          text += evt.delta;
-        }
-        if (evt.response?.usage) {
-          usage.tokensIn = evt.response.usage.input_tokens ?? usage.tokensIn;
-          usage.tokensOut = evt.response.usage.output_tokens ?? usage.tokensOut;
-        }
-      } catch {
-        /* ignore keepalives */
-      }
-    }
-  }
-  return { text, usage };
-}
-
 async function gatewayError(res: Response): Promise<Error> {
-  let message = `KI-Gateway-Fehler ${res.status}`;
+  let message = `OpenAI-Fehler ${res.status}`;
   try {
     const body = (await res.json()) as { error?: { message?: string }; message?: string };
     message = body.error?.message ?? body.message ?? message;
@@ -152,7 +98,7 @@ async function gatewayError(res: Response): Promise<Error> {
     /* noop */
   }
   if (res.status === 429) return new Error(`Rate-Limit erreicht. ${message}`);
-  if (res.status === 402) return new Error(`KI-Guthaben aufgebraucht. ${message}`);
+  if (res.status === 402) return new Error(`OpenAI-Guthaben aufgebraucht. ${message}`);
   return new Error(message);
 }
 
@@ -183,14 +129,14 @@ export async function runPrompt<T = unknown>(
 ): Promise<LlmResult<T>> {
   const system = renderTemplate(tpl.system_prompt, vars);
   const user = renderTemplate(tpl.user_prompt, vars);
+  const model = modelId(tpl.model);
   const temperature = Number(tpl.temperature ?? 0.3);
   const maxTokens = tpl.max_tokens ?? 4000;
-  const useResponses = tpl.model.startsWith("openai/");
   if (varRecorder) {
     varRecorder.push({
       step_key: tpl.step_key,
       template_version: tpl.version,
-      model: tpl.model,
+      model,
       vars,
     });
   }
@@ -198,15 +144,13 @@ export async function runPrompt<T = unknown>(
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const { text: raw, usage } = useResponses
-        ? await callResponses(tpl.model, system, user)
-        : await callChat(tpl.model, system, user, temperature, maxTokens);
+      const { text: raw, usage } = await callChat(model, system, user, temperature, maxTokens);
       const data =
         tpl.response_format === "json" ? (extractJson(raw) as T) : ((raw as unknown) as T);
       return {
         data,
         raw,
-        model: tpl.model,
+        model,
         promptSnapshot: `SYSTEM:\n${system}\n\nUSER:\n${user}`,
         tokensIn: usage.tokensIn,
         tokensOut: usage.tokensOut,

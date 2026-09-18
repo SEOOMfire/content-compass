@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS public.prompt_templates (
     description text DEFAULT ''::text NOT NULL,
     system_prompt text DEFAULT ''::text NOT NULL,
     user_prompt text DEFAULT ''::text NOT NULL,
-    model text DEFAULT 'google/gemini-3.7-flash'::text NOT NULL,
+    model text DEFAULT 'gpt-4o-mini'::text NOT NULL,
     temperature numeric DEFAULT 0.4 NOT NULL,
     max_tokens integer DEFAULT 4000 NOT NULL,
     response_format text DEFAULT 'json'::text NOT NULL,
@@ -670,7 +670,7 @@ Der Zielcontent ist nur AUSREICHEND, wenn alle Bedingungen erfüllt sind:
 
 Antworte nur mit JSON:
 {"verdict":"AUSREICHEND"|"NEU_ERSTELLEN","word_count":0,
- "missing_topics":["..."],"reason":"max. 2 Sätze"}', 'google/gemini-3.7-flash', 0.2, 2000, 'json', '["de_structure", "de_word_count", "target_structure", "target_word_count", "target_excerpt"]', 1, true, 40, NULL, '2026-09-03 09:04:33.884925+00') ON CONFLICT DO NOTHING;
+ "missing_topics":["..."],"reason":"max. 2 Sätze"}', 'gpt-4o-mini', 0.2, 2000, 'json', '["de_structure", "de_word_count", "target_structure", "target_word_count", "target_excerpt"]', 1, true, 40, NULL, '2026-09-03 09:04:33.884925+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('e05ac10c-8246-4cfd-b553-76e2fbd125fd', 'style_profile', 'S5 · Stilprofil', 'Leitet aus Bestandsseiten des Zielmarkts ein Stilprofil ab (gecacht pro Markt und Content-Typ).', 'Du bist Sprach- und Stilanalyst. Antworte ausschließlich mit gültigem JSON.', 'Analysiere den Schreibstil dieser vorhandenen Ratgeberartikel eines Tierbedarf-Shops.
 
 {{reference_texts}}
@@ -681,7 +681,7 @@ Antworte nur mit JSON:
  "sentence_length":"kurz"|"mittel"|"lang",
  "heading_style":"Frage"|"Aussage"|"gemischt",
  "tone_notes":["max. 5 kurze Beobachtungen"],
- "recurring_phrases":["..."]}', 'google/gemini-3.7-flash', 0.3, 2000, 'json', '["reference_texts"]', 1, true, 50, NULL, '2026-09-03 09:04:33.884925+00') ON CONFLICT DO NOTHING;
+ "recurring_phrases":["..."]}', 'gpt-4o-mini', 0.3, 2000, 'json', '["reference_texts"]', 1, true, 50, NULL, '2026-09-03 09:04:33.884925+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('57bdd23a-5d1b-4a8a-b2e7-5a5ec71d335e', 'resolve_target_slug', 'S2 · Ziel-Slug vorschlagen', 'Fallback in S2: schlägt mögliche URL-Slugs in der Zielsprache vor, wenn hreflang und Path-Map nichts liefern.', 'Du bist SEO-Spezialist für Tierbedarf-Onlineshops. Antworte ausschließlich mit gültigem JSON.', 'Zielsprache: {{language}}. Zielland: {{country}}.
 Deutsches URL-Segment: "{{term}}".
 Überschrift der Quellseite (nur als Kontext, nicht als Übersetzungsgrundlage): "{{h1}}".
@@ -693,7 +693,7 @@ Headline-Slugs mit Zusätzen wie "zuverlaessiger-bewacher".
 
 Antworte nur mit JSON:
 {"term_translated":"landesübliche Bezeichnung",
- "slug_candidates":["...","...","...","...","..."]}', 'google/gemini-3.7-flash', 0.3, 1000, 'json', '["term", "h1", "title", "language", "country"]', 2, true, 20, NULL, '2026-09-03 10:39:08.81511+00') ON CONFLICT DO NOTHING;
+ "slug_candidates":["...","...","...","...","..."]}', 'gpt-4o-mini', 0.3, 1000, 'json', '["term", "h1", "title", "language", "country"]', 2, true, 20, NULL, '2026-09-03 10:39:08.81511+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('b51ad427-e939-4a70-aa7c-bcf54079134f', 'link_select', 'S8 · Linkauswahl', 'Wählt aus einer nummerierten Kandidatenliste. Gibt nur Nummern zurück, niemals URLs.', 'Du wählst interne Verlinkungen aus. Du gibst niemals URLs aus, nur Nummern. Antworte ausschließlich mit gültigem JSON.', 'Wähle die beste interne Verlinkung für einen Ankertext.
 
 <ankertext>{{anchor}}</ankertext>
@@ -714,7 +714,7 @@ Wenn keine Seite wirklich passt, antworte mit null. Rate nicht und wähle nicht
 Bevorzuge spezifische redaktionelle Artikel. Kategorie- und Produktübersichtsseiten sind zu allgemein und nur zu wählen, wenn der Ankertext ausdrücklich ein Produktsortiment meint. Im Zweifel null.
 
 Antworte nur mit JSON:
-{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'google/gemini-3.7-flash', 0.1, 1500, 'json', '["anchor", "context_sentence", "candidates"]', 3, true, 80, NULL, '2026-09-10 10:08:23.153227+00') ON CONFLICT DO NOTHING;
+{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'gpt-4o-mini', 0.1, 1500, 'json', '["anchor", "context_sentence", "candidates"]', 3, true, 80, NULL, '2026-09-10 10:08:23.153227+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('6063ff65-72ec-40d3-9e71-647906d1ed2e', 'generate_content', 'S11 · Content erzeugen', 'Finaler Content-Schritt. Wird pro Abschnitt aus dem Lokalisierungsplan angewandt.', 'Du bist erfahrene:r Redakteur:in fuer Tierratgeber-Content und schreibst ausschliesslich in der Zielsprache. Du erzeugst niemals eigene Tabellen. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -806,7 +806,7 @@ KORREKTUR:
 
 In <korrekturhinweise> stehen die Gruende, warum ein vorheriger Versuch abgelehnt wurde. Behebe genau diese Punkte, ohne neue Abweichungen einzufuehren.
 
-Gib nur den fertigen Abschnitt aus, keine Erklaerungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '["language", "language_variant", "country", "brand", "address_form", "style_profile", "style_example", "target_heading", "heading_level", "heading_markup", "de_section", "action", "localization_notes", "written_headings", "previous_content", "used_links", "verified_links", "table_markers", "source_word_count", "max_target_words", "source_list_items", "source_paragraphs", "correction_notes", "institutions", "forbidden_claims"]', 11, true, 110, 'ffa437a1-a834-4236-a389-78e1a3fde288', '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklaerungen.', 'gpt-4o', 0.6, 6000, 'text', '["language", "language_variant", "country", "brand", "address_form", "style_profile", "style_example", "target_heading", "heading_level", "heading_markup", "de_section", "action", "localization_notes", "written_headings", "previous_content", "used_links", "verified_links", "table_markers", "source_word_count", "max_target_words", "source_list_items", "source_paragraphs", "correction_notes", "institutions", "forbidden_claims"]', 11, true, 110, 'ffa437a1-a834-4236-a389-78e1a3fde288', '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('4ef0b0de-19d1-4b9d-b283-500033c73269', 'localization_plan', 'S6 · Lokalisierungsplan', 'Qualitätsentscheidender Schritt: legt pro Abschnitt fest, ob übersetzt, lokalisiert, umgeschrieben oder gestrichen wird.', 'Du bist Lokalisierungs-Stratege für internationale Retail-Marken. Antworte ausschließlich mit gültigem JSON.', 'Du planst die Lokalisierung eines deutschen Ratgeberartikels für {{country}} ({{language}}).
 Du schreibst hier noch keinen Fließtext.
 
@@ -837,7 +837,7 @@ Antworte nur mit JSON:
   "anchors":[{"anchor":"Begriff in der Zielsprache, der im Text vorkommen soll",
     "intent":"rasse|produktkategorie|ratgeber",
     "search_terms":["2-4 Suchbegriffe in der Zielsprache"],
-    "path_type":"magazine|category"}]}]}', 'openai/gpt-5.5', 0.3, 8000, 'json', '["de_outline", "market_profile", "country", "language"]', 3, true, 60, NULL, '2026-09-04 09:50:42.381974+00') ON CONFLICT DO NOTHING;
+    "path_type":"magazine|category"}]}]}', 'gpt-4o', 0.3, 8000, 'json', '["de_outline", "market_profile", "country", "language"]', 3, true, 60, NULL, '2026-09-04 09:50:42.381974+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('fda17a6c-e226-4d20-b23b-931d9fa583ec', 'localize_table', 'S10 · Tabellen lokalisieren', 'Ein Call pro Tabelle. Zeilenzahl wird danach im Code geprüft.', 'Du lokalisierst Tabellen. Antworte ausschliesslich mit gueltigem JSON.', 'Lokalisiere diese Tabelle nach {{language}}.
 
 <tabelle>{{table_markdown}}</tabelle>
@@ -853,7 +853,7 @@ Regeln:
 - Kein Text ausserhalb der Tabelle
 
 Antworte nur mit JSON:
-{"table_markdown":"die vollstaendige lokalisierte Tabelle als Markdown, gleiche Zeilen- und Spaltenzahl wie das Original"}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '["table_markdown", "language", "market_notes"]', 4, true, 100, NULL, '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
+{"table_markdown":"die vollstaendige lokalisierte Tabelle als Markdown, gleiche Zeilen- und Spaltenzahl wie das Original"}', 'gpt-4o-mini', 0.2, 4000, 'json', '["table_markdown", "language", "market_notes"]', 4, true, 100, NULL, '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('c31e473e-20e4-4bf7-9708-b75aaebca149', 'serp_gap_queries', 'S7b · SERP-Suchanfragen', 'Formuliert bis zu 5 Suchanfragen für DataForSEO, um Lücken im Link-Pool zu schließen.', 'Du bist SEO-Analyst für den Zielmarkt {{country}} (Sprache: {{language}}, Domain: {{host}}).
 Aufgabe: Finde heraus, welche thematisch passenden Artikel im Zielmarkt fehlen könnten, und formuliere dafür Suchanfragen.
 
@@ -873,7 +873,7 @@ Im deutschen Text verlinkte Themen:
 {{de_content_links}}
 
 Bereits im Link-Pool des Zielmarkts vorhanden:
-{{pool_urls}}', 'google/gemini-3.7-flash', 0.4, 1500, 'json', '["country", "language", "host", "topic", "max_queries", "de_outline", "de_content_links", "pool_urls"]', 1, true, 75, NULL, '2026-09-10 07:24:48.036251+00') ON CONFLICT DO NOTHING;
+{{pool_urls}}', 'gpt-4o-mini', 0.4, 1500, 'json', '["country", "language", "host", "topic", "max_queries", "de_outline", "de_content_links", "pool_urls"]', 1, true, 75, NULL, '2026-09-10 07:24:48.036251+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('9dbaf538-f50e-4cb6-a460-c86f573f08e4', 'serp_gap_select', 'S7b · SERP-Treffer auswählen', 'Wählt aus den DataForSEO-Ergebnissen nur die potentiell nützlichen Ziel-URLs aus.', 'Du prüfst Suchergebnisse der Domain {{host}} für den Markt {{country}} (Sprache: {{language}}).
 Aufgabe: Wähle ausschließlich die Ergebnisse aus, die als interner Link zum Thema „{{topic}}" wirklich nützlich sein können.
 
@@ -884,7 +884,7 @@ Regeln:
 - intent: ein Satz in Deutsch, worum es auf der Seite geht (aus Titel und Beschreibung).
 
 Antworte ausschließlich als JSON: {"selected": [{"index": 1, "url": "...", "anchor_text": "...", "intent": "..."}]}', 'Suchergebnisse (Nummer, Titel, URL, Beschreibung):
-{{serp_results}}', 'google/gemini-3.7-flash', 0.2, 2000, 'json', '["country", "language", "host", "topic", "serp_results"]', 1, true, 76, NULL, '2026-09-10 07:24:48.036251+00') ON CONFLICT DO NOTHING;
+{{serp_results}}', 'gpt-4o-mini', 0.2, 2000, 'json', '["country", "language", "host", "topic", "serp_results"]', 1, true, 76, NULL, '2026-09-10 07:24:48.036251+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('0a51ca43-5001-4656-b5d9-a5f9106c53a3', 'link_summary', 'S9 · Zielseite zusammenfassen', 'Fasst jede verifizierte Zielseite in einem Absatz zusammen, damit S11 den echten Inhalt kennt.', 'Du fasst Webseiten für die interne Verlinkung zusammen. Antworte ausschließlich mit gültigem JSON.', 'Fasse den Inhalt dieser Seite zusammen.
 
 <url>{{url}}</url>
@@ -901,7 +901,7 @@ Aufgaben:
 4. good_anchor: kurzer, natürlicher Ankertext in {{language}}, der exakt das Seitenthema trifft.
 
 Antworte nur mit JSON:
-{"summary":"...","page_type":"ratgeber|kategorie|produkt|sonstige","topics":["..."],"good_anchor":"..."}', 'google/gemini-3.7-flash', 0.2, 1200, 'json', '["url", "title", "h1", "meta_description", "outline", "page_text", "language"]', 1, true, 95, NULL, '2026-09-10 10:07:10.592762+00') ON CONFLICT DO NOTHING;
+{"summary":"...","page_type":"ratgeber|kategorie|produkt|sonstige","topics":["..."],"good_anchor":"..."}', 'gpt-4o-mini', 0.2, 1200, 'json', '["url", "title", "h1", "meta_description", "outline", "page_text", "language"]', 1, true, 95, NULL, '2026-09-10 10:07:10.592762+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('4d6f23ac-0200-40cf-9cfb-dc436e4cf88b', 'translate_path_segment', 'Pfadsegmente übersetzen', 'Schlägt Übersetzungen für fehlende Verzeichnissegmente vor (S3). Vorschläge werden live geprüft, bevor sie gespeichert werden.', 'Du bist SEO-Spezialist für internationale Onlineshops. Antworte ausschließlich mit gültigem JSON.', 'Zielsprache: {{language}}. Zielland: {{country}}. Zieldomain: {{domain}}.
 Quell-URL: {{source_url}}
 
@@ -917,7 +917,7 @@ so wie sie ein Tierbedarf-Onlineshop in der URL verwenden würde
 Orientiere dich am Stil der bekannten Paare.
 
 Antworte nur mit JSON:
-{"segments":[{"de":"segment","candidates":["...","...","..."]}]}', 'google/gemini-3.7-flash', 0.3, 1000, 'json', '["language", "country", "domain", "source_url", "known_pairs", "segments"]', 1, true, 35, NULL, '2026-09-11 07:12:06.422842+00') ON CONFLICT DO NOTHING;
+{"segments":[{"de":"segment","candidates":["...","...","..."]}]}', 'gpt-4o-mini', 0.3, 1000, 'json', '["language", "country", "domain", "source_url", "known_pairs", "segments"]', 1, true, 35, NULL, '2026-09-11 07:12:06.422842+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('fb19edab-4b64-44fa-aad8-fde6585a3d28', 'serp_opportunity_queries', 'S7c · SERP-Linkchancen', 'Leitet aus dem deutschen Quelltext bis zu 10 zusätzliche Linkchancen ab und formuliert dafür Suchbegriffe in der Zielsprache.', 'Du bist SEO-Analyst für den Zielmarkt {{country}} (Sprache: {{language}}, Domain-Einschränkung: {{site}}).
 Aufgabe: Lies den deutschen Quelltext und überlege, an welchen Stellen zusätzlich ein interner Link sinnvoll wäre. Formuliere für jede dieser Chancen einen Suchbegriff, mit dem sich prüfen lässt, ob es dazu eine passende Seite auf der Zieldomain gibt.
 
@@ -942,7 +942,7 @@ Bereits im Link-Pool des Zielmarkts vorhanden:
 {{pool_urls}}
 
 Bereits gestellte Suchanfragen (nicht wiederholen):
-{{existing_queries}}', 'google/gemini-3.7-flash', 0.4, 2000, 'json', '["country", "language", "host", "site", "path_prefix", "topic", "max_queries", "de_outline", "de_sections", "pool_urls", "existing_queries"]', 1, true, 77, NULL, '2026-09-11 09:23:02.289687+00') ON CONFLICT DO NOTHING;
+{{existing_queries}}', 'gpt-4o-mini', 0.4, 2000, 'json', '["country", "language", "host", "site", "path_prefix", "topic", "max_queries", "de_outline", "de_sections", "pool_urls", "existing_queries"]', 1, true, 77, NULL, '2026-09-11 09:23:02.289687+00') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_templates VALUES ('22c13880-85b2-4cae-ad6f-9d2e4753fc39', 'qa', 'S12 · QA', 'LLM-Qualitätsprüfung, ergänzt um deterministische Code-Checks.', 'Du bist Schlussredakteur:in und pruefst lokalisierten Content. Antworte ausschliesslich mit gueltigem JSON.', 'Pruefe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>
@@ -972,7 +972,7 @@ Pruefe streng auf:
 Melde jeden Fund einzeln mit dem gefundenen Wortlaut. Melde nichts, was korrekt ist.
 
 Antworte nur mit JSON:
-{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '["full_text", "source_text", "localized_tables", "structure_report", "language", "country", "brand", "institutions", "forbidden_terms"]', 5, true, 120, NULL, '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
+{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'gpt-4o-mini', 0.2, 4000, 'json', '["full_text", "source_text", "localized_tables", "structure_report", "language", "country", "brand", "institutions", "forbidden_terms"]', 5, true, 120, NULL, '2026-09-17 07:37:54.787851+00') ON CONFLICT DO NOTHING;
 
 
 --
@@ -989,7 +989,7 @@ verwenden würde. Berücksichtige die landesübliche Fachbezeichnung, nicht die
 wörtliche Übersetzung.
 
 Antworte nur mit JSON:
-{"slugs": ["...", "...", "...", "...", "..."]}', 'google/gemini-3.7-flash', 0.3, 1000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+{"slugs": ["...", "...", "...", "...", "..."]}', 'gpt-4o-mini', 0.3, 1000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('7f64dbc3-95c8-44ed-8177-1d83d8613de4', 'aa13d2dd-1e34-465f-840d-2aa3055346ce', 1, 'Du bist erfahrener SEO-Content-Analyst. Antworte ausschließlich mit gültigem JSON.', 'Vergleiche zwei Ratgeberartikel zum selben Thema.
 
 <de_struktur>{{de_structure}}</de_struktur>
@@ -1006,7 +1006,7 @@ Der Zielcontent ist nur AUSREICHEND, wenn alle Bedingungen erfüllt sind:
 
 Antworte nur mit JSON:
 {"verdict":"AUSREICHEND"|"NEU_ERSTELLEN","word_count":0,
- "missing_topics":["..."],"reason":"max. 2 Sätze"}', 'google/gemini-3.7-flash', 0.2, 2000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+ "missing_topics":["..."],"reason":"max. 2 Sätze"}', 'gpt-4o-mini', 0.2, 2000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('95a4ec37-2045-4f39-8948-a5df14cb009a', 'e05ac10c-8246-4cfd-b553-76e2fbd125fd', 1, 'Du bist Sprach- und Stilanalyst. Antworte ausschließlich mit gültigem JSON.', 'Analysiere den Schreibstil dieser vorhandenen Ratgeberartikel eines Tierbedarf-Shops.
 
 {{reference_texts}}
@@ -1017,7 +1017,7 @@ Antworte nur mit JSON:
  "sentence_length":"kurz"|"mittel"|"lang",
  "heading_style":"Frage"|"Aussage"|"gemischt",
  "tone_notes":["max. 5 kurze Beobachtungen"],
- "recurring_phrases":["..."]}', 'google/gemini-3.7-flash', 0.3, 2000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+ "recurring_phrases":["..."]}', 'gpt-4o-mini', 0.3, 2000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('56f549b9-c729-4465-b40c-955aca3248da', '4ef0b0de-19d1-4b9d-b283-500033c73269', 1, 'Du bist Lokalisierungs-Stratege für internationale Retail-Marken. Antworte ausschließlich mit gültigem JSON.', 'Du planst die Lokalisierung eines deutschen Ratgeberartikels für {{country}} ({{language}}).
 Du schreibst hier noch keinen Fließtext.
 
@@ -1038,7 +1038,7 @@ Antworte nur mit JSON:
 {"sections":[{"de_heading":"...","target_heading":"...",
   "action":"uebersetzen|lokalisieren|umschreiben|streichen",
   "notes":["konkrete Anweisung für den Schreibschritt"],
-  "has_table":true|false}]}', 'openai/gpt-5.5', 0.3, 8000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+  "has_table":true|false}]}', 'gpt-4o', 0.3, 8000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('ed5f0f8d-0597-429c-8bb4-76bd2cf6d094', 'b51ad427-e939-4a70-aa7c-bcf54079134f', 1, 'Du wählst interne Verlinkungen aus. Du gibst niemals URLs aus, nur Nummern. Antworte ausschließlich mit gültigem JSON.', 'Wähle die beste interne Verlinkung für einen Ankertext.
 
 <ankertext>{{anchor}}</ankertext>
@@ -1052,7 +1052,7 @@ Wähle die thematisch am besten passende Seite. Wenn keine Seite wirklich passt,
 antworte mit null. Rate nicht und wähle nicht „die am wenigsten schlechte".
 
 Antworte nur mit JSON:
-{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'google/gemini-3.7-flash', 0.1, 1500, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'gpt-4o-mini', 0.1, 1500, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('d2b71570-9698-42ba-806b-b578f245ef4d', 'fda17a6c-e226-4d20-b23b-931d9fa583ec', 1, 'Du lokalisierst Tabellen. Antworte ausschließlich mit gültigem JSON.', 'Lokalisiere diese Tabelle nach {{language}}.
 
 <tabelle>{{table_markdown}}</tabelle>
@@ -1065,7 +1065,7 @@ Regeln:
 - Keine Zeile zusammenfassen oder auslassen
 
 Antworte nur mit JSON:
-{"rows":[{"label":"...","value":"..."}]}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+{"rows":[{"label":"...","value":"..."}]}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('5a03d3a0-b0eb-4244-a77b-003ed3597c21', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 1, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1094,7 +1094,7 @@ Regeln:
 - Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
   Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('bf36e7ab-405d-4468-ba7a-f2bc79a80222', '22c13880-85b2-4cae-ad6f-9d2e4753fc39', 1, 'Du bist Schlussredakteur:in und prüfst lokalisierten Content. Antworte ausschließlich mit gültigem JSON.', 'Prüfe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>
@@ -1107,7 +1107,7 @@ marktfremde Aussagen, defekte Markdown-Tabellen, doppelte Überschriften,
 erfundene oder unvollständige Links.
 
 Antworte nur mit JSON:
-{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
+{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-03 09:04:33.884925+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('a444b7b7-b05d-48b6-b549-02f923312ad1', 'b51ad427-e939-4a70-aa7c-bcf54079134f', 2, 'Du wählst interne Verlinkungen aus. Du gibst niemals URLs aus, nur Nummern. Antworte ausschließlich mit gültigem JSON.', 'Wähle die beste interne Verlinkung für einen Ankertext.
 
 <ankertext>{{anchor}}</ankertext>
@@ -1126,7 +1126,7 @@ Wenn keine Seite wirklich passt, antworte mit null. Rate nicht und wähle nicht
 „die am wenigsten schlechte".
 
 Antworte nur mit JSON:
-{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'google/gemini-3.7-flash', 0.1, 1500, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
+{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'gpt-4o-mini', 0.1, 1500, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('fd0376aa-1f0c-4cef-b80f-bc5020081863', '22c13880-85b2-4cae-ad6f-9d2e4753fc39', 2, 'Du bist Schlussredakteur:in und prüfst lokalisierten Content. Antworte ausschließlich mit gültigem JSON.', 'Prüfe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>
@@ -1154,7 +1154,7 @@ Prüfe streng auf:
 6. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
 
 Antworte nur mit JSON:
-{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
+{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('1a5e3617-43ad-423e-a1f4-5e4285906b29', '4ef0b0de-19d1-4b9d-b283-500033c73269', 3, 'Du bist Lokalisierungs-Stratege für internationale Retail-Marken. Antworte ausschließlich mit gültigem JSON.', 'Du planst die Lokalisierung eines deutschen Ratgeberartikels für {{country}} ({{language}}).
 Du schreibst hier noch keinen Fließtext.
 
@@ -1185,7 +1185,7 @@ Antworte nur mit JSON:
   "anchors":[{"anchor":"Begriff in der Zielsprache, der im Text vorkommen soll",
     "intent":"rasse|produktkategorie|ratgeber",
     "search_terms":["2-4 Suchbegriffe in der Zielsprache"],
-    "path_type":"magazine|category"}]}]}', 'openai/gpt-5.5', 0.3, 8000, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
+    "path_type":"magazine|category"}]}]}', 'gpt-4o', 0.3, 8000, 'json', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('cdadde4c-58b8-4b31-a0d7-15208ef8afae', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 3, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1249,7 +1249,7 @@ VERLINKUNG:
 - Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
   Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-04 09:50:42.381974+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('6e7de136-aeb2-4e77-90cb-50367ffcb082', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 4, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1336,7 +1336,7 @@ Falls eine Tabelle übergeben wurde, füge sie unverändert an passender Stelle 
 Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
 Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-10 06:24:41.69294+00', 'ffa437a1-a834-4236-a389-78e1a3fde288') ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-10 06:24:41.69294+00', 'ffa437a1-a834-4236-a389-78e1a3fde288') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('44399b98-dafb-475c-80df-c780875a44ba', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 5, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1439,7 +1439,7 @@ Falls eine Tabelle übergeben wurde, füge sie unverändert an passender Stelle 
 Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
 Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-10 09:56:21.094023+00', NULL) ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-10 09:56:21.094023+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('2e0a439c-2120-4081-8135-a56d13a1ce64', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 5, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1542,7 +1542,7 @@ Falls eine Tabelle übergeben wurde, füge sie unverändert an passender Stelle 
 Format: [H2: ...] bzw. [H3: ...], darunter Fließtext, Listen als Bullets,
 Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-10 10:08:15.327166+00', NULL) ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-10 10:08:15.327166+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('fa27bf8b-df4f-457e-bb0f-e24a08079666', 'b51ad427-e939-4a70-aa7c-bcf54079134f', 2, 'Du wählst interne Verlinkungen aus. Du gibst niemals URLs aus, nur Nummern. Antworte ausschließlich mit gültigem JSON.', 'Wähle die beste interne Verlinkung für einen Ankertext.
 
 <ankertext>{{anchor}}</ankertext>
@@ -1561,7 +1561,7 @@ Wenn keine Seite wirklich passt, antworte mit null. Rate nicht und wähle nicht
 „die am wenigsten schlechte".
 
 Antworte nur mit JSON:
-{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'google/gemini-3.7-flash', 0.1, 1500, 'json', '2026-09-10 10:08:23.153227+00', NULL) ON CONFLICT DO NOTHING;
+{"choice": <nummer>|null, "confidence":"hoch"|"mittel"|"niedrig", "reason":"1 Satz"}', 'gpt-4o-mini', 0.1, 1500, 'json', '2026-09-10 10:08:23.153227+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('55a25342-28fd-47e6-b9e2-5256354f7ef1', 'fda17a6c-e226-4d20-b23b-931d9fa583ec', 2, 'Du lokalisierst Tabellen. Antworte ausschließlich mit gültigem JSON.', 'Lokalisiere diese Tabelle nach {{language}}.
 
 <tabelle>{{table_markdown}}</tabelle>
@@ -1574,7 +1574,7 @@ Regeln:
 - Keine Zeile zusammenfassen oder auslassen
 
 Antworte nur mit JSON:
-{"table_markdown":"die vollständige lokalisierte Tabelle als Markdown, gleiche Zeilenzahl wie das Original"}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-17 07:37:54.787851+00', NULL) ON CONFLICT DO NOTHING;
+{"table_markdown":"die vollständige lokalisierte Tabelle als Markdown, gleiche Zeilenzahl wie das Original"}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-17 07:37:54.787851+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('f7d1eaf9-20c5-490d-be98-d4711e60d05f', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 9, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1698,7 +1698,7 @@ Enthält <tabelle_pflicht> keine Tabelle, erzeuge auch keine.
 
 Format: Überschrift wie oben vorgegeben, darunter Fließtext und Listen exakt wie im Original, Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-17 07:37:54.787851+00', 'ffa437a1-a834-4236-a389-78e1a3fde288') ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-17 07:37:54.787851+00', 'ffa437a1-a834-4236-a389-78e1a3fde288') ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('86f19331-4666-4379-9400-00905b8194c4', '22c13880-85b2-4cae-ad6f-9d2e4753fc39', 3, 'Du bist Schlussredakteur:in und prüfst lokalisierten Content. Antworte ausschließlich mit gültigem JSON.', 'Prüfe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>
@@ -1733,7 +1733,7 @@ Prüfe streng auf:
 9. Falscher Markenname, inkonsistente Ansprache, verbotene Begriffe.
 
 Antworte nur mit JSON:
-{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-17 07:37:54.787851+00', NULL) ON CONFLICT DO NOTHING;
+{"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-17 07:37:54.787851+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('b563038b-e6cb-493d-a17f-be6b17ddd0eb', 'fda17a6c-e226-4d20-b23b-931d9fa583ec', 3, 'Du lokalisierst Tabellen. Antworte ausschließlich mit gültigem JSON.', 'Lokalisiere diese Tabelle nach {{language}}.
 
 <tabelle>{{table_markdown}}</tabelle>
@@ -1746,7 +1746,7 @@ Regeln:
 - Keine Zeile zusammenfassen oder auslassen
 
 Antworte nur mit JSON:
-{"table_markdown":"die vollständige lokalisierte Tabelle als Markdown, gleiche Zeilenzahl wie das Original"}', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
+{"table_markdown":"die vollständige lokalisierte Tabelle als Markdown, gleiche Zeilenzahl wie das Original"}', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('01c06090-93cc-42dc-851a-cb8c66b84cdd', '6063ff65-72ec-40d3-9e71-647906d1ed2e', 10, 'Du bist erfahrene:r Redakteur:in für Tierratgeber-Content und schreibst ausschließlich in der Zielsprache. Gib nur den fertigen Abschnitt aus.', 'Du schreibst EINEN Abschnitt eines Ratgeberartikels auf {{language}}.
 Sprachvariante: {{language_variant}}. Zielland: {{country}}. Marke: {{brand}}. Ansprache: {{address_form}}.
 
@@ -1870,7 +1870,7 @@ Enthält <tabelle_pflicht> keine Tabelle, erzeuge auch keine.
 
 Format: Überschrift wie oben vorgegeben, darunter Fließtext und Listen exakt wie im Original, Bildhinweise als [Image – kurze Bildbeschreibung in der Zielsprache].
 
-Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'openai/gpt-5.5', 0.6, 6000, 'text', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
+Gib nur den fertigen Abschnitt aus, keine Erklärungen.', 'gpt-4o', 0.6, 6000, 'text', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.prompt_versions VALUES ('68e14770-6e7f-4d93-8fcb-18bb66346eb9', '22c13880-85b2-4cae-ad6f-9d2e4753fc39', 4, 'Du bist Schlussredakteur:in und prüfst lokalisierten Content. Antworte ausschließlich mit gültigem JSON.', 'Prüfe diesen lokalisierten Artikel auf Fehler.
 
 <artikel>{{full_text}}</artikel>\n<quelle>{{source_text}}</quelle>\n<lokalisierte_tabellen>{{localized_tables}}</lokalisierte_tabellen>\n<strukturbericht>{{structure_report}}</strukturbericht>
@@ -1908,7 +1908,7 @@ Antworte nur mit JSON:
 {"issues":[{"type":"...","location":"...","found":"...","suggestion":"..."}]}
 10. TABELLEN: Jede lokalisierte Tabelle muss exakt einmal, unverändert und im zugehörigen Abschnitt stehen. Zusätzliche, doppelte, umformulierte oder widersprüchliche Tabellen sind Fehler (type: "tabelle").
 11. UMFANG: Vergleiche Quelle und Ziel je Abschnitt. Melde eine deutliche Verlängerung, insbesondere neue Absätze oder wiederholte Hinweise (type: "laenge").
-12. LOKALISIERUNGSKONSISTENZ: Melde widersprüchliche Markt-, Rechts- oder Institutionsaussagen zwischen Fließtext und Tabelle sowie nicht lokalisierte marktgebundene Aussagen (type: "lokalisierung").', 'google/gemini-3.7-flash', 0.2, 4000, 'json', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
+12. LOKALISIERUNGSKONSISTENZ: Melde widersprüchliche Markt-, Rechts- oder Institutionsaussagen zwischen Fließtext und Tabelle sowie nicht lokalisierte marktgebundene Aussagen (type: "lokalisierung").', 'gpt-4o-mini', 0.2, 4000, 'json', '2026-09-17 07:53:11.919099+00', NULL) ON CONFLICT DO NOTHING;
 
 
 --
