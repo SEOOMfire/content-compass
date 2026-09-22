@@ -39,17 +39,25 @@ interface Draft {
   max_tokens: number;
 }
 
-/** Auswählbare ChatGPT-Modelle (OpenAI-Modell-IDs). Liste bei Bedarf erweitern. */
+/** Auswählbare ChatGPT-Modelle (OpenAI-Modell-IDs, Stand 2026). Liste bei Bedarf erweitern. */
 const CHATGPT_MODELS = [
+  // Non-Reasoning (unterstützen temperature)
   "gpt-4o-mini",
   "gpt-4o",
   "gpt-4.1-nano",
   "gpt-4.1-mini",
   "gpt-4.1",
+  // Reasoning (kein temperature; nutzt max_completion_tokens + reasoning_effort)
   "o3-mini",
   "o4-mini",
+  "gpt-5-nano",
   "gpt-5-mini",
   "gpt-5",
+  "gpt-5.1",
+  "gpt-5.2",
+  "gpt-5.4",
+  "gpt-5.5",
+  "gpt-5.6",
 ];
 
 function PromptsPage() {
