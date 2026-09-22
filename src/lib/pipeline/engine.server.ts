@@ -56,6 +56,7 @@ import {
   countParagraphs,
   countWords,
   deterministicArticleIssues,
+  isTableOnlySection,
   issueSeverity,
   normalizeForComparison,
   MAX_SECTION_WORD_RATIO,
@@ -1454,6 +1455,21 @@ export async function runStep(
           (_match, index: string) => `[[OMFIRE_TABLE_${index}]]`,
         );
         const requiredMarkers = input.tables.map((table) => `[[OMFIRE_TABLE_${table.index}]]`);
+        // Reine Tabellen-Abschnitte (nur Überschrift + Tabellenmarker, kein Fließtext)
+        // werden ohne LLM-Aufruf direkt zusammengesetzt – es gibt nichts zu übersetzen.
+        if (isTableOnlySection(sourceWithMarkers)) {
+          const markerLines = sourceWithMarkers
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          let direct = `${hashes} ${input.target_heading}\n\n${markerLines.join("\n")}`;
+          for (const table of input.tables) {
+            direct = direct.replace(`[[OMFIRE_TABLE_${table.index}]]`, table.markdown);
+          }
+          written.push(input.target_heading);
+          content.push({ heading: input.target_heading, markdown: direct });
+          continue;
+        }
         const sourceWords = countWords(sourceWithMarkers);
         const maxTargetWords = Math.ceil(sourceWords * MAX_SECTION_WORD_RATIO + 5);
         let md: string | null = null;
@@ -1493,6 +1509,12 @@ export async function runStep(
           tokensIn += res.tokensIn;
           tokensOut += res.tokensOut;
           const raw = typeof res.data === "string" ? res.data : String(res.data);
+          // Härtung: Der Marker muss bereits im rohen Modell-Output wörtlich und
+          // genau einmal vorkommen – unabhängig davon, ob an seiner Stelle etwas
+          // Tabellenähnliches steht, das strukturell plausibel wirkt.
+          const rawMarkerProblems = requiredMarkers.filter(
+            (marker) => raw.split(marker).length - 1 !== 1,
+          );
           const stripped = stripMarkdownTables(raw.trim());
           let candidate = enforceHeadingLevel(stripped.text, input.heading_level, input.target_heading);
           const markerProblems = requiredMarkers.filter(
@@ -1500,6 +1522,8 @@ export async function runStep(
           );
           const guard = checkGeneratedSection(sourceWithMarkers, candidate);
           const hard: string[] = [...guard.hardReasons];
+          if (rawMarkerProblems.length)
+            hard.push("Tabellen-Positionsmarker fehlt oder wurde im Roh-Output vervielfacht.");
           if (stripped.removed.length) hard.push("Das Modell hat eine eigene Tabelle erzeugt.");
           if (markerProblems.length) hard.push("Tabellen-Positionsmarker fehlt oder wurde vervielfacht.");
           lastReasons = [...hard, ...guard.softReasons];
@@ -1577,6 +1601,7 @@ export async function runStep(
         targetText: full,
         tables: ctx.tables ?? [],
         sections: sectionPairs,
+        brand: market.brand ?? "",
       });
       const tpl = await loadTemplate("qa");
       const res = await runPrompt<unknown>(tpl, {

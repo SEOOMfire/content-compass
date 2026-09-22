@@ -34,6 +34,9 @@ import {
   blockingIssues,
   checkGeneratedSection,
   deterministicArticleIssues,
+  deterministicBrandIssues,
+  isTableOnlySection,
+  issueSeverity,
 } from "../src/lib/pipeline/content-guards";
 
 import { cleanHeadingText } from "../src/lib/pipeline/extract.server";
@@ -612,5 +615,51 @@ describe("21 · Weiche Abweichungen stoppen den Lauf nicht", () => {
       ],
     });
     expect(blockingIssues(issues).length).toBe(0);
+  });
+});
+
+describe("22 · Reine Tabellen-Abschnitte (kein LLM-Aufruf)", () => {
+  test("nur Marker → reiner Tabellen-Abschnitt", () => {
+    expect(isTableOnlySection("[[OMFIRE_TABLE_0]]")).toBe(true);
+    expect(isTableOnlySection("[[OMFIRE_TABLE_0]]\n[[OMFIRE_TABLE_1]]")).toBe(true);
+  });
+
+  test("Fließtext neben dem Marker → kein reiner Tabellen-Abschnitt", () => {
+    expect(isTableOnlySection("Der Mastiff ist eine britische Rasse.\n[[OMFIRE_TABLE_0]]")).toBe(false);
+    expect(isTableOnlySection("[[OMFIRE_TABLE_0]]\nNoch ein Satz.")).toBe(false);
+  });
+
+  test("leer oder nur Fließtext → kein reiner Tabellen-Abschnitt", () => {
+    expect(isTableOnlySection("")).toBe(false);
+    expect(isTableOnlySection("Nur ein Absatz.")).toBe(false);
+  });
+});
+
+describe("23 · Marke blockiert nicht mehr, deterministischer Abgleich bleibt", () => {
+  test("marke-Funde sind Hinweise, keine Blocker", () => {
+    expect(issueSeverity({ type: "marke" })).toBe("warning");
+    expect(blockingIssues([{ type: "marke" }]).length).toBe(0);
+    expect(blockingIssues([{ type: "tabelle" }]).length).toBe(1);
+    expect(blockingIssues([{ type: "verbotene_aussage" }]).length).toBe(1);
+  });
+
+  test("deterministischer Abgleich erkennt nur echte Rechtschreibfehler", () => {
+    const brand = "maxizoo";
+    // Exakte Schreibweise und Groß-/Kleinschreibung sind ok.
+    expect(deterministicBrandIssues("Willkommen bei maxizoo.", brand)).toHaveLength(0);
+    expect(deterministicBrandIssues("Willkommen bei MaxiZoo.", brand)).toHaveLength(0);
+    // Echte Fehlschreibung blockiert (Typ marke_falsch, severity error).
+    const hits = deterministicBrandIssues("Willkommen bei maxizox.", brand);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.type).toBe("marke_falsch");
+    expect(hits[0]?.severity).toBe("error");
+  });
+
+  test("fehlende Markennennung ist kein Befund", () => {
+    expect(deterministicBrandIssues("Ein Text ohne Markennennung.", "maxizoo")).toHaveLength(0);
+  });
+
+  test("themenfremde, aber ähnlich klingende Wörter lösen keinen Fehlalarm aus", () => {
+    expect(deterministicBrandIssues("Der maximale Wert.", "maxizoo")).toHaveLength(0);
   });
 });

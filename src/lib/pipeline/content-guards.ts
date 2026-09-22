@@ -44,6 +44,20 @@ export function countParagraphs(text: string): number {
     .filter(Boolean).length;
 }
 
+/**
+ * Erkennt Abschnitte, deren Quellinhalt ausschließlich aus Tabellenmarkern der
+ * Form [[OMFIRE_TABLE_n]] besteht (kein Fließtext, keine Listen, keine Absätze).
+ * Solche Abschnitte werden in S11 ohne LLM-Aufruf direkt zusammengesetzt.
+ */
+export function isTableOnlySection(sourceWithMarkers: string): boolean {
+  const lines = sourceWithMarkers
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return false;
+  return lines.every((l) => /^\[\[OMFIRE_TABLE_\d+\]\]$/.test(l));
+}
+
 export function headingLines(text: string): string[] {
   return text.split("\n").filter((line) => /^\s*#{1,6}\s+\S/.test(line));
 }
@@ -117,14 +131,19 @@ export interface ArticleGuardIssue {
   severity: IssueSeverity;
 }
 
-/** Nur diese Befundarten stoppen den Export. Alles andere ist ein Hinweis. */
+/**
+ * Nur diese Befundarten stoppen den Export. Alles andere ist ein Hinweis.
+ * `marke` fehlt hier bewusst: Die LLM-Einschätzung zu Markennamen/Ansprache ist
+ * zu unzuverlässig, um zu blockieren. Eine echte, falsch geschriebene Fundstelle
+ * wird stattdessen deterministisch über `deterministicBrandIssues` (marke_falsch)
+ * abgefangen.
+ */
 export const BLOCKING_ISSUE_TYPES = [
   "tabelle",
   "tabelle_fehlt",
   "tabelle_zusaetzlich",
   "claim",
   "verbotene_aussage",
-  "marke",
 ];
 
 export function issueSeverity(issue: { type: string; severity?: string }): IssueSeverity {
@@ -136,12 +155,66 @@ export function blockingIssues<T extends { type: string; severity?: string }>(is
   return issues.filter((i) => issueSeverity(i) === "error");
 }
 
+/** Levenshtein-Distanz für den Marken-Abgleich (kurze Eingaben, nicht hot). */
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev: number[] = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const curr: number[] = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(
+        prev[j]! + 1,
+        curr[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = curr;
+  }
+  return prev[n]!;
+}
+
+/**
+ * Deterministische Markenprüfung (kein LLM). Blockiert nur bei einer tatsächlich
+ * falsch geschriebenen Fundstelle der Marke im Zieltext. Groß-/Kleinschreibung und
+ * Leer-/Bindestrich-Varianten gelten als korrekt und werden nicht beanstandet.
+ */
+export function deterministicBrandIssues(targetText: string, brand: string): ArticleGuardIssue[] {
+  const trimmed = brand.trim();
+  if (!trimmed) return [];
+  const norm = trimmed.toLowerCase().replace(/[\s-]+/g, "");
+  if (norm.length < 4) return [];
+  const threshold = norm.length >= 8 ? 2 : 1;
+  const tokens = targetText.match(/[A-Za-zÀ-ž]+/g) ?? [];
+  const seen = new Set<string>();
+  const issues: ArticleGuardIssue[] = [];
+  for (const token of tokens) {
+    const t = token.toLowerCase();
+    if (t === norm || seen.has(t)) continue;
+    const dist = levenshtein(t, norm);
+    if (dist >= 1 && dist <= threshold) {
+      seen.add(t);
+      issues.push({
+        type: "marke_falsch",
+        location: "Gesamtartikel",
+        found: `Marke möglicherweise falsch geschrieben: „${token}“ (erwartet „${trimmed}“).`,
+        suggestion: "Markennamen exakt wie vorgegeben schreiben.",
+        severity: "error",
+      });
+    }
+  }
+  return issues;
+}
+
 /** Deterministische Schlussprüfung, unabhängig vom Urteil des Sprachmodells. */
 export function deterministicArticleIssues(args: {
   sourceText: string;
   targetText: string;
   tables: { index: number; markdown: string }[];
   sections: { heading: string; source: string; target: string }[];
+  brand?: string;
 }): ArticleGuardIssue[] {
   const issues: ArticleGuardIssue[] = [];
   const tableCheck = checkExactTables(args.targetText, args.tables);
@@ -195,6 +268,9 @@ export function deterministicArticleIssues(args: {
       suggestion: "Zusätze entfernen und den Umfang an die Quelle angleichen.",
       severity: "warning",
     });
+  }
+  if (args.brand) {
+    issues.push(...deterministicBrandIssues(args.targetText, args.brand));
   }
   return issues;
 
