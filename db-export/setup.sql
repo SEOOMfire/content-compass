@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS public.prompt_templates (
     model text DEFAULT 'gpt-4o-mini'::text NOT NULL,
     temperature numeric DEFAULT 0.4 NOT NULL,
     max_tokens integer DEFAULT 4000 NOT NULL,
+    reasoning_effort text,
     response_format text DEFAULT 'json'::text NOT NULL,
     variables jsonb DEFAULT '[]'::jsonb NOT NULL,
     version integer DEFAULT 1 NOT NULL,
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS public.prompt_versions (
     model text,
     temperature numeric,
     max_tokens integer,
+    reasoning_effort text,
     response_format text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by uuid

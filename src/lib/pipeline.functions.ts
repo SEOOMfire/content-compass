@@ -162,6 +162,7 @@ export const savePrompt = createServerFn({ method: "POST" })
         model: z.string(),
         temperature: z.number(),
         max_tokens: z.number(),
+        reasoning_effort: z.string().nullable().optional(),
       })
       .parse(d),
   )
@@ -181,6 +182,7 @@ export const savePrompt = createServerFn({ method: "POST" })
       model: data.model,
       temperature: data.temperature,
       max_tokens: data.max_tokens,
+      reasoning_effort: data.reasoning_effort ?? null,
       version,
       updated_by: context.userId,
       updated_at: new Date().toISOString(),
@@ -193,6 +195,7 @@ export const savePrompt = createServerFn({ method: "POST" })
       model: data.model,
       temperature: data.temperature,
       max_tokens: data.max_tokens,
+      reasoning_effort: data.reasoning_effort ?? null,
       response_format: current.response_format,
       created_by: context.userId,
     });

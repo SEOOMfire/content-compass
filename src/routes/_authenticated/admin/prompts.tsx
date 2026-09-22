@@ -17,6 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  FIXED_TEMPERATURE,
+  isReasoningModel,
+  REASONING_EFFORT_OPTIONS,
+} from "@/lib/pipeline/model-capabilities";
 import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/admin/prompts")({
@@ -37,6 +42,7 @@ interface Draft {
   model: string;
   temperature: number;
   max_tokens: number;
+  reasoning_effort: string;
 }
 
 /** Auswählbare ChatGPT-Modelle (OpenAI-Modell-IDs, Stand 2026). Liste bei Bedarf erweitern. */
@@ -88,6 +94,19 @@ function PromptsPage() {
     ? [...CHATGPT_MODELS, draft.model]
     : CHATGPT_MODELS;
 
+  const isReasoning = draft ? isReasoningModel(draft.model) : false;
+
+  function onModelChange(value: string) {
+    if (!draft) return;
+    const reasoning = isReasoningModel(value);
+    setDraft({
+      ...draft,
+      model: value,
+      temperature: reasoning ? FIXED_TEMPERATURE : draft.temperature,
+      reasoning_effort: reasoning ? (draft.reasoning_effort || "medium") : "",
+    });
+  }
+
   function select(id: string) {
     const p = (prompts.data ?? []).find((x: Tables<"prompt_templates">) => x.id === id);
     if (!p) return;
@@ -100,6 +119,7 @@ function PromptsPage() {
       model: p.model,
       temperature: Number(p.temperature ?? 0.3),
       max_tokens: p.max_tokens ?? 4000,
+      reasoning_effort: p.reasoning_effort ?? (isReasoningModel(p.model) ? "medium" : ""),
     });
   }
 
@@ -107,7 +127,9 @@ function PromptsPage() {
     if (!active || !draft) return;
     setBusy(true);
     try {
-      const res = await savePrompt({ data: { id: active, ...draft } });
+      const res = await savePrompt({
+        data: { id: active, ...draft, reasoning_effort: draft.reasoning_effort || null },
+      });
       toast.success(`Gespeichert als Version ${res.version}`);
       await qc.invalidateQueries({ queryKey: ["prompt-templates"] });
     } catch (err) {
@@ -190,7 +212,7 @@ function PromptsPage() {
                   <Label>Modell</Label>
                   <Select
                     value={draft.model}
-                    onValueChange={(value) => setDraft({ ...draft, model: value })}
+                    onValueChange={onModelChange}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Modell wählen" />
@@ -206,12 +228,19 @@ function PromptsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Temperature</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={draft.temperature}
-                    onChange={(e) => setDraft({ ...draft, temperature: Number(e.target.value) })}
-                  />
+                  {isReasoning ? (
+                    <Input type="number" value={FIXED_TEMPERATURE} disabled />
+                  ) : (
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={draft.temperature}
+                      onChange={(e) => setDraft({ ...draft, temperature: Number(e.target.value) })}
+                    />
+                  )}
+                  {isReasoning && (
+                    <p className="text-xs text-muted-foreground">Fix (Reasoning-Modell)</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Max Tokens</Label>
@@ -221,6 +250,26 @@ function PromptsPage() {
                     onChange={(e) => setDraft({ ...draft, max_tokens: Number(e.target.value) })}
                   />
                 </div>
+                {isReasoning && (
+                  <div className="space-y-1.5">
+                    <Label>Reasoning Effort</Label>
+                    <Select
+                      value={draft.reasoning_effort || "medium"}
+                      onValueChange={(value) => setDraft({ ...draft, reasoning_effort: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="medium" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REASONING_EFFORT_OPTIONS.map((effort) => (
+                          <SelectItem key={effort} value={effort}>
+                            {effort}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>System-Prompt</Label>

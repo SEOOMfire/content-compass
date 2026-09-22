@@ -1,3 +1,10 @@
+import {
+  modelId,
+  supportsReasoningEffort,
+  supportsTemperature,
+  usesCompletionTokens,
+} from "./model-capabilities";
+
 const BASE_URL = (process.env["OPENAI_BASE_URL"] || "https://api.openai.com/v1").replace(/\/+$/, "");
 
 export interface PromptTemplateRow {
@@ -8,6 +15,7 @@ export interface PromptTemplateRow {
   temperature: number | string | null;
   max_tokens: number | null;
   response_format: string | null;
+  reasoning_effort: string | null;
   version: number;
 }
 
@@ -45,27 +53,9 @@ function apiKey(): string {
   return key;
 }
 
-/** Entfernt ein optionales Anbieter-Präfix ("openai/gpt-4o" → "gpt-4o"). */
-function modelId(model: string): string {
-  return model.replace(/^[a-z0-9_-]+\//i, "");
-}
-
 export interface Usage {
   tokensIn: number;
   tokensOut: number;
-}
-
-/** Neuere OpenAI-Modelle erwarten `max_completion_tokens` statt `max_tokens`. */
-function usesCompletionTokens(model: string): boolean {
-  return /^(o[1-9]|gpt-4\.1|gpt-5)/i.test(modelId(model));
-}
-
-/**
- * Reasoning-Modelle (o-Serie + GPT-5.x) unterstützen kein `temperature`
- * (bzw. nur den Default 1). Für sie wird der Parameter weggelassen.
- */
-function supportsTemperature(model: string): boolean {
-  return !/^(o[1-9]|gpt-5)/i.test(modelId(model));
 }
 
 async function callChat(
@@ -74,6 +64,7 @@ async function callChat(
   user: string,
   temperature: number,
   maxTokens: number,
+  reasoningEffort: string | null,
 ): Promise<{ text: string; usage: Usage }> {
   const id = modelId(model);
   const params: Record<string, unknown> = {
@@ -90,6 +81,9 @@ async function callChat(
   }
   if (supportsTemperature(id)) {
     params["temperature"] = temperature;
+  }
+  if (supportsReasoningEffort(id) && reasoningEffort) {
+    params["reasoning_effort"] = reasoningEffort;
   }
   const res = await fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
@@ -153,6 +147,7 @@ export async function runPrompt<T = unknown>(
   const model = modelId(tpl.model);
   const temperature = Number(tpl.temperature ?? 0.3);
   const maxTokens = tpl.max_tokens ?? 4000;
+  const reasoningEffort = tpl.reasoning_effort ?? null;
   if (varRecorder) {
     varRecorder.push({
       step_key: tpl.step_key,
@@ -165,7 +160,7 @@ export async function runPrompt<T = unknown>(
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const { text: raw, usage } = await callChat(model, system, user, temperature, maxTokens);
+      const { text: raw, usage } = await callChat(model, system, user, temperature, maxTokens, reasoningEffort);
       const data =
         tpl.response_format === "json" ? (extractJson(raw) as T) : ((raw as unknown) as T);
       return {

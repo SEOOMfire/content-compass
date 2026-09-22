@@ -318,6 +318,7 @@ export type Database = {
           max_tokens: number
           model: string
           name: string
+          reasoning_effort: string | null
           response_format: string
           sort_order: number
           step_key: string
@@ -336,6 +337,7 @@ export type Database = {
           max_tokens?: number
           model?: string
           name: string
+          reasoning_effort?: string | null
           response_format?: string
           sort_order?: number
           step_key: string
@@ -354,6 +356,7 @@ export type Database = {
           max_tokens?: number
           model?: string
           name?: string
+          reasoning_effort?: string | null
           response_format?: string
           sort_order?: number
           step_key?: string
@@ -374,6 +377,7 @@ export type Database = {
           id: string
           max_tokens: number | null
           model: string | null
+          reasoning_effort: string | null
           response_format: string | null
           system_prompt: string
           temperature: number | null
@@ -392,6 +396,7 @@ export type Database = {
           temperature?: number | null
           template_id: string
           user_prompt?: string
+          reasoning_effort?: string | null
           version: number
         }
         Update: {
@@ -405,6 +410,7 @@ export type Database = {
           temperature?: number | null
           template_id?: string
           user_prompt?: string
+          reasoning_effort?: string | null
           version?: number
         }
         Relationships: [
