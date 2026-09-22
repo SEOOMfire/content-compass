@@ -10,6 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/admin/prompts")({
@@ -32,6 +39,19 @@ interface Draft {
   max_tokens: number;
 }
 
+/** Auswählbare ChatGPT-Modelle (OpenAI-Modell-IDs). Liste bei Bedarf erweitern. */
+const CHATGPT_MODELS = [
+  "gpt-4o-mini",
+  "gpt-4o",
+  "gpt-4.1-nano",
+  "gpt-4.1-mini",
+  "gpt-4.1",
+  "o3-mini",
+  "o4-mini",
+  "gpt-5-mini",
+  "gpt-5",
+];
+
 function PromptsPage() {
   const qc = useQueryClient();
   const [active, setActive] = useState<string | null>(null);
@@ -53,6 +73,12 @@ function PromptsPage() {
   });
 
   const current = (prompts.data ?? []).find((p: Tables<"prompt_templates">) => p.id === active);
+
+  // Stellt sicher, dass ein bereits gespeichertes, aber nicht gelistetes Modell
+  // trotzdem im Dropdown angezeigt wird.
+  const modelOptions = draft && !CHATGPT_MODELS.includes(draft.model)
+    ? [...CHATGPT_MODELS, draft.model]
+    : CHATGPT_MODELS;
 
   function select(id: string) {
     const p = (prompts.data ?? []).find((x: Tables<"prompt_templates">) => x.id === id);
@@ -154,10 +180,21 @@ function PromptsPage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label>Modell</Label>
-                  <Input
+                  <Select
                     value={draft.model}
-                    onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-                  />
+                    onValueChange={(value) => setDraft({ ...draft, model: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Modell wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelOptions.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Temperature</Label>
