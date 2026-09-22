@@ -215,6 +215,7 @@ export function deterministicArticleIssues(args: {
   tables: { index: number; markdown: string }[];
   sections: { heading: string; source: string; target: string }[];
   brand?: string;
+  verifiedLinks?: { anchor: string; target_url: string; section_de_heading?: string }[];
 }): ArticleGuardIssue[] {
   const issues: ArticleGuardIssue[] = [];
   const tableCheck = checkExactTables(args.targetText, args.tables);
@@ -272,6 +273,49 @@ export function deterministicArticleIssues(args: {
   if (args.brand) {
     issues.push(...deterministicBrandIssues(args.targetText, args.brand));
   }
+  // Deterministischer Link-Check (S12): verifizierte vs. tatsächlich gesetzte Links.
+  if (args.verifiedLinks && args.verifiedLinks.length) {
+    const used = markdownLinkUrls(args.targetText);
+    if (!used.size) {
+      issues.push({
+        type: "keine_links",
+        location: "Gesamtartikel",
+        found: `${args.verifiedLinks.length} verifizierte Links, aber 0 im Text gesetzt.`,
+        suggestion: "Verifizierte interne Links an den passenden Stellen in den Fließtext setzen.",
+        severity: "warning",
+      });
+    }
+    for (const l of args.verifiedLinks) {
+      if (!used.has(normalizeLinkUrl(l.target_url))) {
+        issues.push({
+          type: "link_ungenutzt",
+          location: l.section_de_heading ?? "Gesamtartikel",
+          found: `Verifizierter Link ungenutzt: [${l.anchor}](${l.target_url})`,
+          suggestion: "Link an der passenden Textstelle setzen oder bewusst weglassen.",
+          severity: "warning",
+        });
+      }
+    }
+  }
   return issues;
 
+}
+
+/** Alle Ziel-URLs von Markdown-Links im Text (normalisiert, ohne Fragment). */
+export function markdownLinkUrls(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) {
+    out.add(normalizeLinkUrl(m[1]!));
+  }
+  return out;
+}
+
+function normalizeLinkUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return url.replace(/\/$/, "");
+  }
 }

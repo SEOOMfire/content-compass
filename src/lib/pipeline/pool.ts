@@ -2,6 +2,7 @@
  * Link-Pool statt Gesamtindex (Hub-Harvesting). Rein, damit testbar.
  * Der Pool ersetzt den url_index als Kandidatenquelle für S3 und S7.
  */
+import { isOverviewPath, pathSegmentsOf, stemSegment } from "./topic";
 
 export type PoolPathType = "magazine" | "category" | "other";
 export type PoolOrigin =
@@ -43,6 +44,22 @@ export function isUsable(e: PoolEntry): boolean {
 
 /** Mindest-Score, unterhalb dessen Stufe 2 (Site-Suche) ausgelöst wird. */
 export const MIN_POOL_SCORE = 0.6;
+
+/** Themenfilter (S7): Bonus für die Referenz-Kategorie, Malus für fremde Kategorien. */
+export const CATEGORY_MATCH_BONUS = 0.5;
+export const OTHER_CATEGORY_PENALTY = 0.5;
+export const OVERVIEW_PENALTY = 0.35;
+
+export interface TopicFilter {
+  /** Normalisiertes Referenz-Kategorie-Segment (Zielsprache) des Ankers. */
+  referenceCategory: string | null;
+  /** Alle Kategorie-Segmente des Zielmarkts (normalisiert). */
+  categorySegments: Set<string>;
+  /** Magazin-Wurzel des Zielmarkts (Pfad), z. B. "/magazine". */
+  magazineRoot: string | null;
+  /** Anker nennt ausdrücklich eine Übersicht → kein Übersichts-Malus. */
+  preferOverview: boolean;
+}
 
 export function slugOf(url: string): string {
   try {
@@ -100,7 +117,7 @@ export interface PoolHit {
 export function retrieveFromPool(
   query: string,
   entries: PoolEntry[],
-  opts: { pathType?: string | undefined; limit?: number } = {},
+  opts: { pathType?: string | undefined; limit?: number; topic?: TopicFilter } = {},
 ): PoolHit[] {
   const usable = entries.filter(isUsable);
   const pool =
@@ -118,6 +135,8 @@ export function retrieveFromPool(
     return { e, text, tk };
   });
   const N = docs.length;
+  const topic = opts.topic;
+  const refCat = topic?.referenceCategory ? stemSegment(topic.referenceCategory) : null;
 
   const scored = docs.map((d) => {
     let score = 0;
@@ -126,6 +145,20 @@ export function retrieveFromPool(
       score += Math.log(1 + N / ((df.get(t) ?? 0) + 0.5));
     }
     score += dice(qTri, trigrams(d.text)) * 2;
+    if (topic) {
+      const segs = pathSegmentsOf(d.e.url);
+      if (refCat) {
+        if (segs.some((s) => stemSegment(s) === refCat)) score += CATEGORY_MATCH_BONUS;
+        const hasOther = segs.some((s) => {
+          const st = stemSegment(s);
+          return st !== refCat && topic.categorySegments.has(st);
+        });
+        if (hasOther) score -= OTHER_CATEGORY_PENALTY;
+      }
+      if (!topic.preferOverview && isOverviewPath(d.e.url, topic.magazineRoot)) {
+        score -= OVERVIEW_PENALTY;
+      }
+    }
     return {
       url: d.e.url,
       title: d.e.anchor_text || slugOf(d.e.url) || d.e.url,

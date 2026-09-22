@@ -19,6 +19,12 @@ function ms(v: number | null | undefined): string {
   return v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${v} ms`;
 }
 
+/** Steht die URL als Markdown-Link im Text? */
+function linkInText(text: string, url: string): boolean {
+  const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\]\\(\\s*${escaped}[^)]*\\)`).test(text);
+}
+
 /** Baut den vollständigen Prozess-Report eines Jobs als Markdown. */
 export async function buildJobReport(jobId: string): Promise<{ filename: string; markdown: string }> {
   const { data: job, error } = await supabaseAdmin
@@ -144,6 +150,33 @@ export async function buildJobReport(jobId: string): Promise<{ filename: string;
       );
     }
   }
+  out.push("");
+
+  out.push("## Link-Trichter");
+  out.push("");
+  out.push("| Anker | Origin | Abschnitt | Kandidaten | Gewählt | Reason | Verifiziert | Im Text |");
+  out.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+  const funnelAnchors: { anchor: string; origin: string; section: string }[] = [];
+  for (const s of ctx.plan?.sections ?? []) {
+    for (const a of s.anchors ?? []) funnelAnchors.push({
+      anchor: a.anchor,
+      origin: (a as { origin?: string }).origin ?? "plan",
+      section: s.de_heading,
+    });
+  }
+  const bodyMarkdown = (ctx.content ?? []).map((c) => c.markdown).join("\n\n");
+  for (const fa of funnelAnchors) {
+    const cand = ctx.linkCandidates?.[fa.anchor]?.length ?? 0;
+    const sel = ctx.linkSelection?.find((x) => x.anchor === fa.anchor);
+    const chosen = sel?.url ?? null;
+    const reason = (sel as { reason?: string } | undefined)?.reason ?? "";
+    const verified = chosen && ctx.verifiedLinks?.some((v) => v.target_url === chosen) ? "ja" : chosen ? "nein" : "—";
+    const inText = chosen && linkInText(bodyMarkdown, chosen) ? "ja" : chosen ? "nein" : "—";
+    out.push(
+      `| ${fa.anchor} | ${fa.origin} | ${fa.section} | ${cand} | ${chosen ?? "null"} | ${reason} | ${verified} | ${inText} |`,
+    );
+  }
+  if (!funnelAnchors.length) out.push("_Keine Anker vorhanden._");
   out.push("");
 
   out.push("## Job-Kontext (Endstand)");

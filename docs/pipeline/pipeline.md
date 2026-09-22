@@ -42,7 +42,7 @@ Jobstatus: `idle` → `running` → `error` (mindestens ein Fehler/blockierter S
 * **Tabellen:** jede `<table>` wird zu Markdown umgewandelt (erste Zeile = Kopf, `|` in Zellen wird maskiert), durchnummeriert. An der Fundstelle im Abschnittstext bleibt ein Positionsmarker `[TABELLE n]` stehen, dazu wird die zugehörige Abschnittsüberschrift gespeichert.
 * **Formatierung:** echte Listenpunkte (`<li>`) werden als Zeile mit `- ` erfasst, Absätze (`<p>`) als eigene Zeile ohne Marker. So bleibt unterscheidbar, was im Original Fließtext und was Liste war.
 * **hreflang-Liste:** alle `link[rel=alternate][hreflang]` mit Sprache und Adresse.
-* **Content-Links:** interne Links **nur aus dem Hauptbereich** — ohne Anker (`#`), `mailto:`, `tel:`, ohne Bild-/PDF-Dateien, ohne Selbstverweis, doppelte Adressen einmalig. Gespeichert mit Linktext. Diese Liste ist die Grundlage der hreflang-Ernte in S3/S7a.
+* **Content-Links:** interne Links **nur aus dem Hauptbereich** — ohne Anker (`#`), `mailto:`, `tel:`, ohne Bild-/PDF-Dateien, ohne Selbstverweis, doppelte Adressen einmalig. Gespeichert mit Linktext plus **Fundstelle**: Abschnitt (`section_heading`), Satz (`sentence`, max. 300 Zeichen), reiner Linktext (`anchor_clean`, max. 8 Wörter) und Art (`kind`: `inline`/`teaser`). Diese Liste ist die Grundlage der hreflang-Ernte in S3/S7a und der Anker in S6.
 * Zusätzlich: Titel, H1, Meta-Beschreibung, Canonical, Wortzahl, Gliederung.
 
 **Ergebnis im Kontext:** `source`.
@@ -158,9 +158,9 @@ Zuerst wird ein bereits gespeichertes Profil für Markt + Content-Typ gesucht; e
 
 ## S6 · Lokalisierungsplan
 
-Eingabe: die deutsche Gliederung (je Abschnitt Überschrift + 500 Zeichen Text) und das Marktprofil (Land, Sprache, Marke, Institutionen, verbotene Aussagen, Ansprache). Prompt: `localization_plan`.
+Eingabe: die deutsche Gliederung (je Abschnitt Überschrift + 500 Zeichen Text), das Marktprofil (Land, Sprache, Marke, Institutionen, verbotene Aussagen, Ansprache), der **Hauptgegenstand des Artikels** (`article_subject`, im Code aus H1/Titel/URL-Segment abgeleitet) und die **Inline-Content-Links der Quelle** (`de_content_links`, je mit Abschnitt, Linktext und Satz). Prompt: `localization_plan`.
 
-Ausgabe je Abschnitt: deutsche Überschrift, Zielüberschrift, **Aktion** aus genau vier Werten (`uebersetzen`, `lokalisieren`, `umschreiben`, `streichen`), Hinweise, Tabellen-Kennzeichen und 0–4 **Anker** mit Suchbegriffen und gewünschtem Seitentyp. Das Schema wird hart geprüft; Serviceaussagen der Marke, die nicht im Marktprofil bestätigt sind, muss der Plan zur Prüfung markieren.
+Ausgabe je Abschnitt: deutsche Überschrift, Zielüberschrift, **Aktion** aus genau vier Werten (`uebersetzen`, `lokalisieren`, `umschreiben`, `streichen`), Hinweise, Tabellen-Kennzeichen und 0–4 **Anker** mit Suchbegriffen, gewünschtem Seitentyp sowie **`origin`** (`source_link` für Anker aus einem Quell-Link inkl. `source_url`, sonst `plan`). Das Schema wird hart geprüft; Serviceaussagen der Marke, die nicht im Marktprofil bestätigt sind, muss der Plan zur Prüfung markieren.
 
 ---
 
@@ -173,7 +173,7 @@ Für jeden Anker aus S6 wird eine Suchanfrage aus Ankertext + Suchbegriffen + In
 * Termgewichtung (IDF) über Linktext, Adress-Slug und Breadcrumb,
 * Trigramm-Ähnlichkeit (Dice) auf denselben Text, doppelt gewichtet.
 
-Gefiltert wird zunächst auf den gewünschten Seitentyp; findet sich nichts, wird ohne Typfilter erneut gesucht. Rückgabe: bis zu 8 Treffer, absteigend nach Punktzahl.
+Danach greift ein **Themenfilter** (nur wenn das Kategorie-Segment des Artikels bekannt ist): Bonus für Einträge, deren Pfad das Referenz-Kategorie-Segment enthält, Malus für fremde Kategorie-Segmente sowie für die Magazin-Wurzel und reine Übersichtsseiten. Bei `source_link`-Ankern ist das Kategorie-Segment der Quell-URL die Referenz; ein belegtes hreflang-Äquivalent der Quell-URL wird als erster Kandidat gesetzt. Gefiltert wird zunächst auf den gewünschten Seitentyp; findet sich nichts, wird ohne Typfilter erneut gesucht. Rückgabe: bis zu 8 Treffer, absteigend nach Punktzahl.
 
 **Stufe 2 — gezielte Site-Suche.** Nur wenn kein Treffer existiert oder der beste unter 0,6 liegt, und solange das Budget von 10 Anfragen reicht. Bevorzugt wird die interne Suche des Markts (`search_url_pattern` mit `{q}`); daraus werden bis zu 8 Ergebnisse übernommen, die nicht `other` sind. Alternativ, falls konfiguriert, eine `site:`-Websuche. Neue Treffer wandern in den Pool und die Suche wird wiederholt.
 
@@ -183,7 +183,7 @@ Jede Anfrage wird protokolliert (`search_log`: Anker, Suchbegriffe, ob Stufe 2 l
 
 ## S8 · Linkauswahl
 
-Pro Anker bekommt die KI eine **nummerierte Liste** aus Titel und Seitentyp — **niemals Adressen**. Prompt: `link_select`. Zurück kommt nur eine Nummer oder `null`. Die Nummer wird gegen die Listenlänge geprüft und erst dann in eine Adresse aufgelöst. Damit sind erfundene Links strukturell ausgeschlossen. Thematisch nur benachbarte Seiten sollen abgelehnt werden (`null`).
+Pro Anker bekommt die KI eine **nummerierte Liste** aus Titel, Seitentyp und Kategorie-Segment — **niemals Adressen**. Prompt: `link_select`. Zusätzlich erhält sie den **echten Satz des Quellabschnitts** (`context_sentence`, statt nur des Ankertexts), den Artikel-H1 (`article_topic`), den Hauptgegenstand (`article_subject`) und den Abschnitt (`section_heading`). Zurück kommt nur eine Nummer oder `null` plus `reason`. Die Nummer wird gegen die Listenlänge geprüft und erst dann in eine Adresse aufgelöst. Damit sind erfundene Links strukturell ausgeschlossen. Seiten zu einem fremden Gegenstand werden abgelehnt (`null`), wenn der Ankertext diesen Gegenstand nicht ausdrücklich nennt.
 
 ---
 
@@ -213,7 +213,7 @@ Ein KI-Aufruf pro Tabelle (Prompt `localize_table`), danach eine **deterministis
 
 **Verdrahtung (rein, testbar, `plan.ts`).** Jeder Planabschnitt wird über seine deutsche Überschrift dem echten Quellabschnitt zugeordnet (normalisiert: Kleinbuchstaben, Akzente entfernt). Findet sich keine Entsprechung, bricht der Schritt mit Nennung der betroffenen Überschriften ab — kein stiller Rückfall. Lokalisierte Tabellen werden **deterministisch über die Positionsmarker `[TABELLE n]`** dem Abschnitt zugeordnet, in dem sie im Original stehen — unabhängig vom Tabellenkennzeichen des Plans. Ohne Marker greift das Kennzeichen als Rückfall; übrig gebliebene Tabellen gehen an den letzten inhaltlichen Abschnitt, damit keine Tabelle verloren geht.
 
-**Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt mit technischen Tabellenmarkern, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, der **komplette bisher geschriebene Artikel** (`previous_content`), die Liste der noch verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), Strukturzahlen und Wortbudget sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen. Jeder Abschnitt wird höchstens dreimal erzeugt. Harte Verstöße (zusätzliche Überschriften, eigene Tabellen, fehlende Tabellenmarker, stark abweichende Listenanzahl) führen nach drei Versuchen zum Fehler. Weiche Abweichungen (Absatzanzahl ±1, Wortbudget) lösen einen Korrekturversuch aus; bleibt die Abweichung bestehen, wird der Abschnitt übernommen und als Hinweis protokolliert.
+**Aufruf.** Ein KI-Aufruf pro Abschnitt (Prompt `generate_content`, Textausgabe), streng von oben nach unten, Abschnitte mit Aktion `streichen` werden übersprungen. Übergeben werden: ungekürzter deutscher Abschnitt mit technischen Tabellenmarkern, Zielüberschrift, Aktion, Lokalisierungshinweise, Stilprofil, **bereits geschriebene Überschriften**, die **geplanten Abschnittsüberschriften** (`planned_headings`, für Vorschau-Listen), der **komplette bisher geschriebene Artikel** (`previous_content`), die **zugewiesenen Links dieses Abschnitts** (`assigned_links`), die Liste der übrigen verfügbaren verifizierten Links, die Liste der **bereits gesetzten Links** samt Ankertext (`used_links`), Strukturzahlen und Wortbudget sowie Sprache, Sprachvariante, Land, Marke, Ansprache, Institutionen und verbotene Aussagen. Jeder Abschnitt wird höchstens dreimal erzeugt. Harte Verstöße (zusätzliche Überschriften, eigene Tabellen, fehlende Tabellenmarker, stark abweichende Listenanzahl) führen nach drei Versuchen zum Fehler. Weiche Abweichungen (Absatzanzahl ±1, Wortbudget) lösen einen Korrekturversuch aus; bleibt die Abweichung bestehen, wird der Abschnitt übernommen und als Hinweis protokolliert. Fehlt ein zugewiesener Link im Output, gibt es genau einen Korrekturversuch mit Hinweis in `correction_notes`; fehlt er danach weiterhin, wird der Abschnitt übernommen und als weicher Hinweis in `contentWarnings` protokolliert.
 
 **Linkbudget (im Code durchgesetzt).** Nach jedem Abschnitt liest der Code die tatsächlich gesetzten Links aus dem erzeugten Markdown und zählt sie je Ziel-URL mit dem verwendeten Ankertext mit. Eine URL mit zwei Verwendungen wird aus der Kandidatenliste des nächsten Abschnitts entfernt; eine URL mit einer Verwendung bleibt drin, aber ausdrücklich markiert („bereits 1x verlinkt als …“) und ist nur mit komplett anderem Ankertext erneut erlaubt.
 
@@ -225,7 +225,7 @@ Die harten inhaltlichen Regeln (ausschließlich Zielsprache, keine unbestätigte
 
 ## S12 · QA
 
-Vor der sprachlichen QA laufen unabhängige Code-Prüfungen für Tabellenanzahl/-identität, Überschriften, Listen, Absätze sowie Abschnitts- und Gesamtwortzahl. Die KI erhält zusätzlich die vollständige Quelle, die lokalisierten Tabellen und einen Strukturbericht und prüft Ergänzungen, Widersprüche und inkonsistente Lokalisierung. Befunde sind zweistufig: **Fehler** (Tabellenprobleme, verbotene Aussagen, Markenverstöße) blockieren S12 und damit den Export; alle übrigen Befunde sind **Hinweise**, werden gespeichert und ausgegeben, stoppen die Pipeline aber nicht. Quelle und Zieltext werden dabei einheitlich verglichen (Tabellen als Positionsmarker), damit S11 und S12 nicht unterschiedlich zählen.
+Vor der sprachlichen QA laufen unabhängige Code-Prüfungen für Tabellenanzahl/-identität, Überschriften, Listen, Absätze, Abschnitts- und Gesamtwortzahl sowie ein **deterministischer Link-Check** (verifizierte vs. tatsächlich gesetzte Markdown-Links; je ungenutztem Link ein `link_ungenutzt`, bei 0 gesetzten Links zusätzlich `keine_links`). Die KI erhält zusätzlich die vollständige Quelle, die lokalisierten Tabellen und einen Strukturbericht und prüft Ergänzungen, Widersprüche und inkonsistente Lokalisierung. Befunde sind zweistufig: **Fehler** (Tabellenprobleme, verbotene Aussagen) blockieren S12 und damit den Export; alle übrigen Befunde (inkl. `link_ungenutzt`/`keine_links`) sind **Hinweise**, werden gespeichert und ausgegeben, stoppen die Pipeline aber nicht. Quelle und Zieltext werden dabei einheitlich verglichen (Tabellen als Positionsmarker), damit S11 und S12 nicht unterschiedlich zählen.
 
 ---
 

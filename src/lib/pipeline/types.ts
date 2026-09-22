@@ -156,6 +156,20 @@ export interface SourceTable {
   section_heading?: string;
 }
 
+/** Ein interner Link im Fließtext der Quellseite, inkl. Fundstelle. */
+export interface ContentLink {
+  url: string;
+  anchor: string;
+  /** Überschrift des Abschnitts, in dem der Link steht. */
+  section_heading?: string;
+  /** Vollständiger Satz, in dem der Link steht (Klartext, max. 300 Zeichen). */
+  sentence?: string;
+  /** Reiner Linktext ohne Teaser-/Beschreibungstext (max. 8 Wörter). */
+  anchor_clean?: string;
+  /** "inline" = Fließtext, "teaser" = Kachel-/Teaser-Block. */
+  kind?: "inline" | "teaser";
+}
+
 export interface SourceSection {
   heading: string;
   level: number;
@@ -176,7 +190,7 @@ export interface SourceDoc {
   wordCount: number;
   outline: string;
   /** Interne Links im Fließtext der Quellseite (Basis der hreflang-Ernte). */
-  contentLinks?: { url: string; anchor: string }[];
+  contentLinks?: ContentLink[];
 }
 
 export type PlanAction = "uebersetzen" | "lokalisieren" | "umschreiben" | "streichen";
@@ -186,6 +200,10 @@ export interface PlanAnchor {
   intent: string;
   search_terms: string[];
   path_type?: string | undefined;
+  /** "source_link" = aus einem Inline-Link der deutschen Quelle abgeleitet. */
+  origin?: "source_link" | "plan";
+  /** Deutsche Quell-URL des Links (nur bei origin = "source_link"). */
+  source_url?: string | null;
 }
 
 export interface PlanSection {
@@ -207,12 +225,23 @@ export interface VerifiedLink {
   summary?: string;
   /** "ratgeber" | "kategorie" | "produkt" | "sonstige" – aus der Zielseite abgeleitet. */
   page_type?: string;
+  /** Deutscher Quellabschnitt des Ankers (für die abschnittsgenaue Zuweisung in S11). */
+  section_de_heading?: string;
+  /** Herkunft des Ankers (aus S6). */
+  origin?: "source_link" | "plan";
 }
 
 export interface JobContext {
   source?: SourceDoc;
   slug?: { term_translated: string; slug_candidates: string[] };
   hreflangTargetUrl?: string | null;
+  /** Zentral ermitteltes Artikelthema (Code, kein LLM). */
+  articleTopic?: {
+    main_subject_de: string;
+    category_segment_de: string | null;
+    category_segment_target: string | null;
+    main_subject_target: string | null;
+  };
   target?: {
     status: TargetStatus;
     url: string | null;
@@ -293,8 +322,14 @@ export interface JobContext {
   compare?: unknown;
   styleProfile?: unknown;
   plan?: { sections: PlanSection[] };
-  linkCandidates?: Record<string, { url: string; title: string; path_type: string }[]>;
-  linkSelection?: { anchor: string; url: string | null; confidence?: string }[];
+  linkCandidates?: Record<string, { url: string; title: string; path_type: string; category_segment?: string }[]>;
+  linkSelection?: {
+    anchor: string;
+    url: string | null;
+    confidence?: string;
+    reason?: string;
+    origin?: "source_link" | "plan";
+  }[];
   verifiedLinks?: VerifiedLink[];
   tables?: { index: number; markdown: string; section_heading?: string }[];
   content?: { heading: string; markdown: string }[];

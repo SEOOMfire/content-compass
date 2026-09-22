@@ -37,7 +37,14 @@ import {
   deterministicBrandIssues,
   isTableOnlySection,
   issueSeverity,
+  markdownLinkUrls,
 } from "../src/lib/pipeline/content-guards";
+import {
+  buildArticleTopic,
+  categorySegmentOfUrl,
+  getCategorySegments,
+  stemSegment,
+} from "../src/lib/pipeline/topic";
 
 import { cleanHeadingText } from "../src/lib/pipeline/extract.server";
 import { extractDoc } from "../src/lib/pipeline/extract.server";
@@ -661,5 +668,95 @@ describe("23 · Marke blockiert nicht mehr, deterministischer Abgleich bleibt", 
 
   test("themenfremde, aber ähnlich klingende Wörter lösen keinen Fehlalarm aus", () => {
     expect(deterministicBrandIssues("Der maximale Wert.", "maxizoo")).toHaveLength(0);
+  });
+});
+
+describe("24 · Interne Verlinkung: Thema, Kategorie, Link-Check", () => {
+  test("categorySegmentOfUrl findet das Segment unter der Magazin-Wurzel", () => {
+    expect(categorySegmentOfUrl("https://x.de/magazin/kleintiere/weitere/foo/")).toBe("kleintiere");
+    expect(categorySegmentOfUrl("https://x.de/magazin/foo/")).toBeNull();
+    expect(categorySegmentOfUrl("https://x.de/shop/bar/foo/")).toBeNull();
+  });
+
+  test("stemSegment führt Singular/Plural zusammen", () => {
+    expect(stemSegment("guinea-pigs")).toBe(stemSegment("guinea-pig"));
+    expect(stemSegment("dogs")).toBe("dog");
+  });
+
+  test("buildArticleTopic leitet Hauptgegenstand und Kategorie-Ziel ab", () => {
+    const { topic, warning } = buildArticleTopic({
+      source: { h1: "Capybara – Liebenswerter Exot", title: "Capybara | Shop" },
+      sourceUrl: "https://x.de/magazin/kleintiere/weitere/capybara/",
+      slug: { term_translated: "Capybara" },
+      market: { path_map: { kleintiere: "small-animal" } },
+      combinedMap: {},
+    });
+    expect(topic.main_subject_de).toBe("Capybara");
+    expect(topic.category_segment_de).toBe("kleintiere");
+    expect(topic.category_segment_target).toBe("small-animal");
+    expect(topic.main_subject_target).toBe("Capybara");
+    expect(warning).toBeNull();
+  });
+
+  test("buildArticleTopic warnt bei fehlendem Kategorie-Segment", () => {
+    const { topic, warning } = buildArticleTopic({
+      source: { h1: "Foo" },
+      sourceUrl: "https://x.de/magazin/unbekannt/bar/foo/",
+      market: { path_map: {} },
+      combinedMap: {},
+    });
+    expect(topic.category_segment_target).toBeNull();
+    expect(warning).toContain("unbekannt");
+  });
+
+  test("getCategorySegments leitet aus Pool und Karten ab", () => {
+    const segs = getCategorySegments(
+      { magazine_root: "/magazine", path_map: {} },
+      { hund: "dog" },
+      [
+        { url: "https://x.ie/magazine/cat/health/foo/" },
+        { url: "https://x.ie/magazine/small-animal/bar/" },
+      ],
+    );
+    expect(segs.has(stemSegment("dog"))).toBe(true);
+    expect(segs.has(stemSegment("cat"))).toBe(true);
+    expect(segs.has(stemSegment("small-animal"))).toBe(true);
+  });
+
+  test("retrieveFromPool: Bonus für passende Kategorie", () => {
+    const entries = [
+      { url: "https://x.ie/magazine/small-animal/guinea-pigs/", anchor_text: "Guinea Pigs", path_type: "magazine" as const, origin: "hub" as const, source_page: "", scope: "target" as const, fetched: true },
+      { url: "https://x.ie/magazine/dog/nutrition/", anchor_text: "Dog nutrition", path_type: "magazine" as const, origin: "hub" as const, source_page: "", scope: "target" as const, fetched: true },
+    ];
+    const hits = retrieveFromPool("guinea pigs", entries, {
+      topic: {
+        referenceCategory: "small-animal",
+        categorySegments: new Set(["small-animal", "dog", "cat"]),
+        magazineRoot: "/magazine",
+        preferOverview: false,
+      },
+    });
+    expect(hits[0]?.url).toContain("small-animal");
+  });
+
+  test("markdownLinkUrls findet Markdown-Links", () => {
+    const urls = markdownLinkUrls("Siehe [Guinea Pigs](https://x.ie/a/) und [mehr](https://x.ie/b/).");
+    expect(urls.has("https://x.ie/a")).toBe(true);
+    expect(urls.has("https://x.ie/b")).toBe(true);
+  });
+
+  test("deterministicArticleIssues meldet ungenutzte Links", () => {
+    const issues = deterministicArticleIssues({
+      sourceText: "Quelle",
+      targetText: "# Titel\n\nText ohne Links.",
+      tables: [],
+      sections: [],
+      verifiedLinks: [
+        { anchor: "Guinea Pigs", target_url: "https://x.ie/a/", section_de_heading: "Einleitung" },
+      ],
+    });
+    expect(issues.some((i) => i.type === "keine_links")).toBe(true);
+    expect(issues.some((i) => i.type === "link_ungenutzt")).toBe(true);
+    expect(issues.every((i) => i.severity === "warning")).toBe(true);
   });
 });

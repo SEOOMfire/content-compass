@@ -48,6 +48,7 @@ import {
 } from "./paths";
 import { loadMarketPathMap, saveMarketPaths } from "./market-paths.server";
 import { harvestHreflangEquivalents } from "./hreflang.server";
+import { buildArticleTopic, categorySegmentOfUrl, getCategorySegments, translateSegment } from "./topic";
 import { checkExactTables, checkLocalizedTable, stripMarkdownTables } from "./tables";
 import {
   blockingIssues,
@@ -270,6 +271,13 @@ export async function runStep(
       const alt = matchHreflang(source.hreflang, market.locale);
       if (alt) {
         const seg = lastPathSegment(alt.href) || slugify(source.h1 ?? "");
+        const { topic } = buildArticleTopic({
+          source,
+          sourceUrl: job.source_url,
+          slug: { term_translated: seg },
+          market,
+          combinedMap: {},
+        });
         return {
           output: {
             resolution_method: "hreflang",
@@ -281,6 +289,7 @@ export async function runStep(
           context: {
             slug: { term_translated: seg, slug_candidates: [seg] },
             hreflangTargetUrl: alt.href,
+            articleTopic: topic,
           },
         };
       }
@@ -298,11 +307,19 @@ export async function runStep(
       const parsed = validateStepData("S2_resolve_slug", S2OutputSchema, res.data);
       const candidates = [...new Set(parsed.slug_candidates.map(slugify).filter(Boolean))];
       if (!candidates.length) throw new Error("S2 lieferte keine verwertbaren Slug-Kandidaten.");
+      const { topic } = buildArticleTopic({
+        source,
+        sourceUrl: job.source_url,
+        slug: { term_translated: parsed.term_translated },
+        market,
+        combinedMap: {},
+      });
       return {
         output: { ...parsed, slug_candidates: candidates, resolution_method: "slug", term },
         context: {
           slug: { term_translated: parsed.term_translated, slug_candidates: candidates },
           hreflangTargetUrl: null,
+          articleTopic: topic,
         },
         model: res.model,
         promptSnapshot: res.promptSnapshot,
@@ -545,6 +562,13 @@ export async function runStep(
         ...harvest.derived_path_map,
         ...(ctx.derivedPathMap ?? {}),
       };
+      const { topic, warning: topicWarning } = buildArticleTopic({
+        source,
+        sourceUrl: job.source_url,
+        slug: ctx.slug,
+        market,
+        combinedMap: derivedMap,
+      });
       const pool = await buildLinkPool(hm, job.source_url, derivedMap);
       const known = new Set(pool.entries.map((e) => e.url));
       for (const e of harvest.entries) {
@@ -605,10 +629,12 @@ export async function runStep(
           entries: pool.entries.length,
           siblings: pool.siblings.map((s) => ({ url: s.url, title: s.title })),
           by_origin: countBy(pool.entries.map((e) => e.origin)),
+          ...(topicWarning ? { topic_warning: topicWarning } : {}),
         },
         context: {
           hreflangHarvest: harvest,
           derivedPathMap: derivedMap,
+          articleTopic: topic,
           linkPool: {
             hub_url: pool.hub_url,
             built_at: new Date().toISOString(),
@@ -1108,6 +1134,14 @@ export async function runStep(
     case "S6_localization_plan": {
       const source = requireSource(ctx);
       const tpl = await loadTemplate("localization_plan");
+      const inlineLinks = (source.contentLinks ?? [])
+        .filter((l) => l.kind !== "teaser")
+        .map((l) => ({
+          section_heading: l.section_heading ?? "",
+          anchor: l.anchor_clean || l.anchor,
+          url: l.url,
+          sentence: l.sentence ?? "",
+        }));
       const res = await runPrompt<unknown>(tpl, {
         de_outline: source.sections
           .map((s) => `${"#".repeat(s.level)} ${s.heading}\n${s.text.slice(0, 500)}`)
@@ -1122,6 +1156,8 @@ export async function runStep(
         },
         country: market.country,
         language: market.language,
+        article_subject: ctx.articleTopic?.main_subject_de ?? source.h1 ?? "",
+        de_content_links: inlineLinks,
       });
       const parsed = validateStepData("S6_localization_plan", S6OutputSchema, res.data);
       const sections = parsed.sections as PlanSection[];
@@ -1146,15 +1182,73 @@ export async function runStep(
       const poolEntries: PoolEntry[] = [...(ctx.linkPool?.entries ?? [])];
       if (!poolEntries.length) throw new Error("Kein Link-Pool vorhanden – bitte S7a ausführen.");
 
-      const candidates: Record<string, { url: string; title: string; path_type: string }[]> = {};
+      // Anker-Metadaten (Abschnitt, Herkunft, Quell-URL) für Themenfilter + hreflang-Beleg.
+      const anchorMeta = new Map<
+        string,
+        { section_de_heading: string; origin?: "source_link" | "plan"; source_url?: string | null }
+      >();
+      for (const s of plan) {
+        for (const a of s.anchors ?? []) {
+          anchorMeta.set(a.anchor, {
+            section_de_heading: s.de_heading,
+            ...(a.origin ? { origin: a.origin } : {}),
+            ...(a.source_url ? { source_url: a.source_url } : {}),
+          });
+        }
+      }
+
+      const derivedMap = { ...(ctx.derivedPathMap ?? {}) };
+      const categorySegments = getCategorySegments(market, derivedMap, poolEntries);
+      const refCategory = ctx.articleTopic?.category_segment_target ?? null;
+
+      const candidates: Record<
+        string,
+        { url: string; title: string; path_type: string; category_segment?: string }[]
+      > = {};
       const log: SearchLogEntry[] = [];
       let searchBudget = SEARCH_BUDGET;
 
       for (const a of anchors) {
+        const meta = anchorMeta.get(a.anchor);
         const query = [a.anchor, ...(a.search_terms ?? []), a.intent ?? ""].filter(Boolean).join(" ");
-        // Stufe 1 · Retrieval im Link-Pool
-        let hits = retrieveFromPool(query, poolEntries, { pathType: a.path_type, limit: 8 });
-        if (!hits.length && a.path_type) hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+        // Referenz-Kategorie: bei source_link die der Quell-URL, sonst die des Artikels.
+        let referenceCategory = refCategory;
+        if (meta?.origin === "source_link" && meta.source_url) {
+          const srcCat = categorySegmentOfUrl(meta.source_url);
+          if (srcCat) referenceCategory = translateSegment(srcCat, market, derivedMap) ?? srcCat;
+        }
+        const preferOverview = /(übersicht|overview|ratgeber|guide|advice|magazin|magazine|alle|all)\b/i.test(
+          `${a.anchor} ${a.intent ?? ""}`,
+        );
+        const topicFilter = {
+          referenceCategory,
+          categorySegments,
+          magazineRoot: market.magazine_root ?? null,
+          preferOverview,
+        };
+        // Stufe 1 · Retrieval im Link-Pool (mit Themenfilter).
+        let hits = retrieveFromPool(query, poolEntries, { pathType: a.path_type, limit: 8, topic: topicFilter });
+        if (!hits.length && a.path_type) hits = retrieveFromPool(query, poolEntries, { limit: 8, topic: topicFilter });
+
+        // source_link: belegtes hreflang-Äquivalent der Quell-URL zuerst.
+        if (meta?.origin === "source_link" && meta.source_url) {
+          const deUrl = meta.source_url.replace(/\/$/, "");
+          const hreflangHit = poolEntries.find(
+            (e) => e.origin === "hreflang" && e.source_page.replace(/\/$/, "") === deUrl,
+          );
+          if (hreflangHit) {
+            hits = [
+              {
+                url: hreflangHit.url,
+                title: hreflangHit.anchor_text || hreflangHit.url,
+                path_type: hreflangHit.path_type,
+                origin: hreflangHit.origin,
+                score: 999,
+              },
+              ...hits.filter((h) => h.url !== hreflangHit.url),
+            ].slice(0, 8);
+          }
+        }
 
         // Stufe 2 · gezielte Site-Suche, wenn der Pool zu schwach ist
         let stage2 = false;
@@ -1169,7 +1263,7 @@ export async function runStep(
             found.entries.forEach((e) => {
               if (!poolEntries.some((p) => p.url === e.url)) poolEntries.push(e);
             });
-            hits = retrieveFromPool(query, poolEntries, { limit: 8 });
+            hits = retrieveFromPool(query, poolEntries, { limit: 8, topic: topicFilter });
           }
         }
 
@@ -1177,6 +1271,7 @@ export async function runStep(
           url: c.url,
           title: c.title,
           path_type: c.path_type,
+          ...(categorySegmentOfUrl(c.url) ? { category_segment: categorySegmentOfUrl(c.url)! } : {}),
         }));
         log.push({
           anchor: a.anchor,
@@ -1195,20 +1290,69 @@ export async function runStep(
 
     case "S8_link_select": {
       const candidates = ctx.linkCandidates ?? {};
+      const source = requireSource(ctx);
       const tpl = await loadTemplate("link_select");
-      const selection: { anchor: string; url: string | null; confidence?: string }[] = [];
+      const selection: {
+        anchor: string;
+        url: string | null;
+        confidence?: string;
+        reason?: string;
+        origin?: "source_link" | "plan";
+      }[] = [];
       const snapshots: string[] = [];
       let tokensIn = 0;
       let tokensOut = 0;
+
+      const normHead = (s: string) =>
+        s
+          .toLowerCase()
+          .normalize("NFKD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+
+      // Anker-Metadaten: Herkunft, Abschnitt und echter Kontext-Satz.
+      const anchorMeta = new Map<
+        string,
+        { origin?: "source_link" | "plan"; section_de_heading: string; context_sentence: string }
+      >();
+      for (const s of ctx.plan?.sections ?? []) {
+        const body =
+          source.sections.find((sec) => normHead(sec.heading) === normHead(s.de_heading))?.text ?? "";
+        for (const a of s.anchors ?? []) {
+          let contextSentence = "";
+          if (a.origin === "source_link" && a.source_url) {
+            const cl = (source.contentLinks ?? []).find(
+              (l) => l.url.replace(/\/$/, "") === a.source_url!.replace(/\/$/, ""),
+            );
+            contextSentence = cl?.sentence ?? "";
+          }
+          if (!contextSentence) {
+            contextSentence = bestSentenceInSection(body, a.anchor, a.search_terms ?? []);
+          }
+          anchorMeta.set(a.anchor, {
+            ...(a.origin ? { origin: a.origin } : {}),
+            section_de_heading: s.de_heading,
+            context_sentence: contextSentence,
+          });
+        }
+      }
+
       for (const [anchor, list] of Object.entries(candidates)) {
+        const meta = anchorMeta.get(anchor);
         if (!list.length) {
-          selection.push({ anchor, url: null });
+          selection.push({ anchor, url: null, ...(meta?.origin ? { origin: meta.origin } : {}) });
           continue;
         }
         const res = await runPrompt<unknown>(tpl, {
           anchor,
-          context_sentence: anchor,
-          candidates: list.map((c, i) => `${i + 1}. ${c.title} [${c.path_type}]`).join("\n"),
+          context_sentence: meta?.context_sentence ?? anchor,
+          article_topic: source.h1 ?? source.title ?? "",
+          article_subject: ctx.articleTopic?.main_subject_de ?? source.h1 ?? "",
+          section_heading: meta?.section_de_heading ?? "",
+          candidates: list
+            .map((c, i) => `${i + 1}. ${c.title} [${c.path_type}${c.category_segment ? ` · ${c.category_segment}` : ""}]`)
+            .join("\n"),
         });
         const parsed = validateStepData("S8_link_select", S8OutputSchema, res.data);
         snapshots.push(res.promptSnapshot);
@@ -1220,6 +1364,8 @@ export async function runStep(
           anchor,
           url: chosen?.url ?? null,
           ...(parsed.confidence ? { confidence: parsed.confidence } : {}),
+          ...(parsed.reason ? { reason: parsed.reason } : {}),
+          ...(meta?.origin ? { origin: meta.origin } : {}),
         });
       }
       return {
@@ -1240,6 +1386,11 @@ export async function runStep(
       const summarySnapshots: string[] = [];
       let sumIn = 0;
       let sumOut = 0;
+      // Anker → Quellabschnitt (für die abschnittsgenaue Zuweisung in S11).
+      const anchorSection = new Map<string, string>();
+      for (const sec of ctx.plan?.sections ?? []) {
+        for (const a of sec.anchors ?? []) anchorSection.set(a.anchor, sec.de_heading);
+      }
       await supabaseAdmin.from("verified_links").delete().eq("job_id", job.id);
       let first = true;
       for (const s of selection) {
@@ -1298,7 +1449,8 @@ export async function runStep(
           }
         }
 
-        const row = {
+        const secHeading = anchorSection.get(s.anchor);
+        const link = {
           anchor: s.anchor,
           target_url: s.url,
           http_status: v.http_status,
@@ -1306,9 +1458,21 @@ export async function runStep(
           ...(s.confidence ? { confidence: s.confidence } : {}),
           ...(summary ? { summary } : {}),
           ...(pageType ? { page_type: pageType } : {}),
+          ...(s.origin ? { origin: s.origin } : {}),
+          ...(secHeading ? { section_de_heading: secHeading } : {}),
         };
-        verified.push(row);
-        await supabaseAdmin.from("verified_links").insert({ job_id: job.id, source: "pool", ...row });
+        verified.push(link);
+        await supabaseAdmin.from("verified_links").insert({
+          job_id: job.id,
+          source: "pool",
+          anchor: link.anchor,
+          target_url: link.target_url,
+          http_status: link.http_status,
+          canonical_ok: link.canonical_ok,
+          ...(link.confidence ? { confidence: link.confidence } : {}),
+          ...(link.summary ? { summary: link.summary } : {}),
+          ...(link.page_type ? { page_type: link.page_type } : {}),
+        });
       }
       return {
         output: { verified, broken },
@@ -1406,8 +1570,8 @@ export async function runStep(
         return parts.length ? `\n  ${parts.join(" | ")}` : "";
       };
 
-      const availableLinks = () =>
-        allLinks
+      const availableLinks = (list: typeof allLinks) =>
+        list
           .filter((l) => (linkUsage.get(l.target_url)?.length ?? 0) < 2)
           .map((l) => {
             const used = linkUsage.get(l.target_url) ?? [];
@@ -1436,6 +1600,19 @@ export async function runStep(
           }
         }
       };
+
+      const hasLink = (markdown: string, url: string): boolean => {
+        const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`\\]\\(\\s*${escaped}[^)]*\\)`).test(markdown);
+      };
+
+      // Vorschau-Listen ({{planned_headings}}): alle Ziel-Überschriften in
+      // Planreihenfolge, ohne Einleitungsabschnitt und ohne "streichen".
+      const introHeading = plan[0]?.target_heading;
+      const plannedHeadings = plan
+        .filter((s) => s.action !== "streichen" && s.target_heading !== introHeading)
+        .map((s) => s.target_heading)
+        .join("\n");
 
       for (const input of inputs) {
         if (input.action === "streichen") continue;
@@ -1475,6 +1652,10 @@ export async function runStep(
         let md: string | null = null;
         let fallback: string | null = null;
         let lastReasons: string[] = [];
+        // Zugewiesene Links dieses Abschnitts vs. übrige (optionale) Kandidaten.
+        const assigned = allLinks.filter((l) => l.section_de_heading === input.de_heading);
+        const others = allLinks.filter((l) => l.section_de_heading !== input.de_heading);
+        let assignedRetried = false;
 
         for (let attempt = 0; attempt < 3 && md === null; attempt++) {
           // Vollständiges Objekt an das Modell – Tabellen nur als undurchsichtige Positionsmarker.
@@ -1495,7 +1676,11 @@ export async function runStep(
             action: input.action,
             localization_notes: input.notes.join("\n- "),
             written_headings: written.join(", "),
-            verified_links: availableLinks(),
+            planned_headings: plannedHeadings,
+            assigned_links:
+              assigned.map((l) => `- [${l.anchor}](${l.target_url})${linkMeta(l)}`).join("\n") ||
+              "(keine)",
+            verified_links: availableLinks(others),
             used_links: usedLinksForPrompt(),
             previous_content: previousContent,
             table_markers: requiredMarkers.join(", ") || "(keine)",
@@ -1538,9 +1723,21 @@ export async function runStep(
               lastReasons.push("Die deterministisch eingesetzte Tabelle ist nicht exakt oder nicht eindeutig.");
             } else if (!hard.length) {
               const cleaned = candidate.replace(/\n{3,}/g, "\n\n").trim();
-              // Weiche Abweichungen: einmal nachbessern lassen, sonst übernehmen und protokollieren.
-              if (!guard.softReasons.length) md = cleaned;
-              else fallback = cleaned;
+              // Zugewiesene Links: genau ein Korrekturversuch, sonst übernehmen.
+              const missingAssigned = assigned.filter((l) => !hasLink(cleaned, l.target_url));
+              if (missingAssigned.length && !assignedRetried) {
+                assignedRetried = true;
+                lastReasons.push(
+                  `Zugewiesener Link fehlt: ${missingAssigned
+                    .map((l) => `[${l.anchor}](${l.target_url})`)
+                    .join(", ")}. Setze ihn an der passenden Stelle, ohne neuen Satz.`,
+                );
+              } else if (!guard.softReasons.length) {
+                md = cleaned;
+              } else {
+                // Weiche Abweichungen: einmal nachbessern lassen, sonst übernehmen.
+                fallback = cleaned;
+              }
             }
           }
         }
@@ -1552,6 +1749,13 @@ export async function runStep(
           throw new Error(
             `Abschnitt „${input.target_heading}“ verletzt nach drei Versuchen die Strukturregeln: ${lastReasons.join(" ")}`,
           );
+        }
+
+        // Zugewiesene Links, die weiterhin fehlen: als weicher Hinweis protokollieren.
+        for (const l of assigned) {
+          if (!hasLink(md, l.target_url)) {
+            softWarnings.push(`„${input.target_heading}“: zugewiesener Link [${l.anchor}](${l.target_url}) fehlt im Text.`);
+          }
         }
 
         written.push(input.target_heading);
@@ -1602,6 +1806,7 @@ export async function runStep(
         tables: ctx.tables ?? [],
         sections: sectionPairs,
         brand: market.brand ?? "",
+        verifiedLinks: ctx.verifiedLinks ?? [],
       });
       const tpl = await loadTemplate("qa");
       const res = await runPrompt<unknown>(tpl, {
@@ -1730,6 +1935,35 @@ function headline(raw: string): string {
   const text = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
   if (!text) return "";
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Satz eines Abschnitts mit der höchsten Wortüberschneidung zu anchor + search_terms. */
+function bestSentenceInSection(sectionText: string, anchor: string, searchTerms: string[]): string {
+  const sentences = sectionText
+    .split(/(?<=[.!?;])\s+/)
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (!sentences.length) return "";
+  const want = [anchor, ...(searchTerms ?? [])].join(" ").toLowerCase();
+  const wantTokens = new Set(
+    want
+      .split(/\s+/)
+      .map((t) => t.replace(/[^a-z0-9äöüß]/gi, ""))
+      .filter((t) => t.length > 2),
+  );
+  if (!wantTokens.size) return sentences[0]!.slice(0, 300);
+  let best = sentences[0]!;
+  let bestScore = -1;
+  for (const s of sentences) {
+    const st = s.toLowerCase();
+    let score = 0;
+    for (const t of wantTokens) if (st.includes(t)) score++;
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  return best.slice(0, 300);
 }
 
 function requireSource(ctx: JobContext) {

@@ -1,5 +1,5 @@
 import { parse, type HTMLElement } from "node-html-parser";
-import type { SourceDoc, SourceSection, SourceTable } from "./types";
+import type { ContentLink, SourceDoc, SourceSection, SourceTable } from "./types";
 
 export const USER_AGENT =
   "Mozilla/5.0 (compatible; OMfireLocalizationBot/1.0; +https://www.fressnapf.de/)";
@@ -59,12 +59,62 @@ function sameHost(a: string, b: string): boolean {
   }
 }
 
-/** Interne Links im Fließtext (nav/header/footer sind vorher entfernt). */
-function collectContentLinks(main: HTMLElement, pageUrl: string): { url: string; anchor: string }[] {
+/** Text des ersten Textknotens eines Links (reiner Linktext ohne Teaser). */
+function firstTextNodeText(el: HTMLElement): string {
+  for (const child of el.childNodes) {
+    if (child.nodeType === 3) {
+      return ((child as unknown as { text?: string }).text ?? "").replace(/\s+/g, " ").trim();
+    }
+  }
+  return "";
+}
+
+/** Kürzt auf maximal n Wörter. */
+function maxWords(s: string, n: number): string {
+  return s.split(/\s+/).filter(Boolean).slice(0, n).join(" ");
+}
+
+const BLOCK_TAGS = ["p", "li", "div", "section", "article", "main", "body"];
+
+/** Text des nächstgelegenen Block-Containers eines Links. */
+function parentBlockText(el: HTMLElement): string {
+  let p = el.parentNode as HTMLElement | null;
+  while (p && p.tagName && !BLOCK_TAGS.includes(p.tagName.toLowerCase())) {
+    p = p.parentNode as HTMLElement | null;
+  }
+  return p ? textOf(p) : textOf(el);
+}
+
+/** Satz aus einem Blocktext, der den Ankertext enthält (max. 300 Zeichen). */
+function sentenceContaining(blockText: string, anchor: string): string {
+  const clean = blockText.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const a = anchor.replace(/\s+/g, " ").trim();
+  const candidates = clean.split(/(?<=[.!?;])\s+/);
+  const hit = a ? candidates.find((c) => c.includes(a)) : candidates[0];
+  return (hit ?? clean).trim().slice(0, 300);
+}
+
+/** "teaser" für Kachel-/Teaser-Links (langer Ankertext oder Überschrift im Link). */
+function linkKind(a: HTMLElement): "inline" | "teaser" {
+  const words = (a.text.match(/\S+/g) ?? []).length;
+  const hasHeading = Boolean(a.querySelector("h1,h2,h3,h4,h5"));
+  return words > 12 || hasHeading ? "teaser" : "inline";
+}
+
+/** Interne Links im Fließtext (nav/header/footer sind vorher entfernt), inkl. Fundstelle. */
+function collectContentLinks(main: HTMLElement, pageUrl: string): ContentLink[] {
   const seen = new Set<string>();
-  const out: { url: string; anchor: string }[] = [];
-  for (const a of main.querySelectorAll("a[href]")) {
-    const href = a.getAttribute("href") ?? "";
+  const out: ContentLink[] = [];
+  let currentHeading = "";
+  // h1/h2/h3 + a[href] in Dokumentreihenfolge → Link gehört zum letzten Abschnitt.
+  for (const node of main.querySelectorAll("h1,h2,h3,a[href]")) {
+    const tag = node.tagName?.toLowerCase();
+    if (tag === "h1" || tag === "h2" || tag === "h3") {
+      currentHeading = cleanHeadingText(textOf(node));
+      continue;
+    }
+    const href = node.getAttribute("href") ?? "";
     if (!href || href.startsWith("#") || /^(mailto|tel|javascript):/i.test(href)) continue;
     let abs: URL;
     try {
@@ -80,7 +130,15 @@ function collectContentLinks(main: HTMLElement, pageUrl: string): { url: string;
     if (u.replace(/\/$/, "") === pageUrl.replace(/\/$/, "")) continue;
     if (seen.has(u)) continue;
     seen.add(u);
-    out.push({ url: u, anchor: textOf(a) });
+    const anchor = textOf(node);
+    out.push({
+      url: u,
+      anchor,
+      ...(currentHeading ? { section_heading: currentHeading } : {}),
+      ...(parentBlockText(node) ? { sentence: sentenceContaining(parentBlockText(node), anchor) } : {}),
+      ...(firstTextNodeText(node) ? { anchor_clean: maxWords(firstTextNodeText(node), 8) } : {}),
+      kind: linkKind(node),
+    });
   }
   return out;
 }

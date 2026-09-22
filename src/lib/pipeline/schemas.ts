@@ -9,6 +9,8 @@ export const AnchorSchema = z.object({
   intent: z.string().default(""),
   search_terms: z.array(z.string().min(1)).default([]),
   path_type: z.string().optional(),
+  origin: z.enum(["source_link", "plan"]).optional(),
+  source_url: z.string().url().nullable().optional(),
 });
 
 export const PlanSectionSchema = z.object({
