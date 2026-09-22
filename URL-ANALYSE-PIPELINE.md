@@ -587,7 +587,8 @@ den Plan aus S6, den Schreibstil aus S5 und die geprüften Links aus S9. Sie sch
 Abschnitt in der Zielsprache. Das Tool kontrolliert danach automatisch, ob alles stimmt
 (nur eine Überschrift, keine eigenen Tabellen, ähnlicher Umfang) und lässt bei Fehlern
 nachbessern. Weil jeder Abschnitt den bisherigen Text kennt, werden Wiederholungen
-vermieden.
+vermieden. Besteht ein Abschnitt dagegen nur aus einer Überschrift plus Tabelle (z. B. ein
+Steckbrief), schreibt die KI gar nichts — das Tool setzt ihn direkt ohne KI zusammen.
 
 **Zweck:** Der finale Content-Schritt. Erzeugt den Zieltext Abschnitt für Abschnitt.
 
@@ -608,11 +609,18 @@ vermieden.
   Quellabschnitts; nach der Erzeugung per `enforceHeadingLevel` erzwungen.
 - **Inhaltsverzeichnis:** TOC-Überschriften → nur Überschrift + `[INHALTSVERZEICHNIS –
   Platzhalter]`, keine KI.
+- **Reine Tabellen-Abschnitte (ohne LLM):** besteht der Abschnitt nach Abzug der
+  Überschrift ausschließlich aus Tabellenmarkern (`[[OMFIRE_TABLE_n]]`, kein Fließtext),
+  wird **kein** `generate_content`-Aufruf ausgeführt. Der Abschnitt wird direkt im Code
+  zusammengesetzt (Überschrift + je eine Markerzeile in Original-Reihenfolge); die
+  Tabellen-Substitution und die Schlussprüfung laufen unverändert weiter.
 - **Schleife:** ein `generate_content`-Aufruf pro Abschnitt, streng von oben nach unten;
   Abschnitte mit `streichen` werden übersprungen. Max. 3 Versuche je Abschnitt.
 - **Harte Guards** (`checkGeneratedSection` + Marker-Prüfung): genau eine Überschrift,
   keine eigene Tabelle (`stripMarkdownTables`), Tabellenmarker genau einmal, keine
-  verschachtelten Überschriften, Listenpunktzahl nicht > ±1 abweichend. Nach 3 Verstößen
+  verschachtelten Überschriften, Listenpunktzahl nicht > ±1 abweichend. Der Marker wird
+  **zuerst wörtlich im rohen Modell-Output** geprüft — fehlt er dort (auch wenn an seiner
+  Stelle etwas Tabellenähnliches steht), gilt das als harter Fehler. Nach 3 Verstößen
   → Fehler.
 - **Weiche Abweichungen** (Absatzzahl ±1, Wortbudget) → ein Korrekturversuch; bleibt die
   Abweichung, wird der Abschnitt übernommen und als Hinweis protokolliert.
@@ -636,8 +644,9 @@ vermieden.
 **Verständlich erklärt:** Eine Art Schlussredaktion. Die KI liest den fertigen Text noch
 einmal komplett und sucht nach Fehlern: deutsche Restwörter, falscher Markenname,
 erfundene Links, kaputte Tabellen. Zusätzlich macht das Tool selbst ein paar technische
-Kontrollen, die nicht der KI überlassen werden. Schwere Fehler stoppen die Ausgabe, leichte
-werden nur als Hinweis mitgeliefert.
+Kontrollen, die nicht der KI überlassen werden — darunter ein automatischer Abgleich der
+Markenschreibweise. Nur schwere, eindeutige Fehler stoppen die Ausgabe; alles andere
+(auch Marken-Hinweise der KI) wird nur als Hinweis mitgeliefert.
 
 **Zweck:** Sprach-, Marken-, Claim- und Strukturprüfung des Gesamttexts.
 
@@ -645,12 +654,16 @@ werden nur als Hinweis mitgeliefert.
 
 **Umsetzung:**
 - **Deterministische Code-Prüfungen** (`deterministicArticleIssues`): Tabellenanzahl/
-  -identität, Struktur je Abschnitt (Listen/Überschriften/Absätze), Gesamtlänge.
+  -identität, Struktur je Abschnitt (Listen/Überschriften/Absätze), Gesamtlänge sowie —
+  neu — ein **deterministischer Marken-Abgleich** (`deterministicBrandIssues`): blockiert
+  nur bei einer tatsächlich falsch geschriebenen Marke (Nah-Treffer, Typ `marke_falsch`);
+  Groß-/Kleinschreibung und Leer-/Bindestrich-Varianten gelten als korrekt.
 - **LLM-Prüfung** Prompt **`qa`** mit Volltext, Quelle, lokalisierten Tabellen und einem
   Strukturbericht (Wortzahl/Listen/Absätze je Abschnitt Quelle vs. Ziel).
 - Befunde werden kombiniert und mit `issueSeverity` klassifiziert. **Blockierend** (Stoppt
-  den Export) sind nur: Tabellenprobleme, verbotene Aussagen/Claims, Markenverstöße
-  (`BLOCKING_ISSUE_TYPES`). Alle übrigen Befunde sind Hinweise (Warnings).
+  den Export) sind nur: Tabellenprobleme, verbotene Aussagen/Claims sowie echte
+  Marken-Rechtschreibfehler (`marke_falsch`). Der LLM-Typ `marke` blockiert **nicht mehr**:
+  er wird weiterhin erzeugt, geloggt und im Report als Hinweis angezeigt.
 
 **Output:**
 - Kontext: `qa = { issues, blocking, warnings }`.
