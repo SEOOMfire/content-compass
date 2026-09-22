@@ -1230,3 +1230,6 @@ Antworte nur mit JSON:
 *Dieses Dokument beschreibt den Stand der Implementierung in `src/lib/pipeline/`.*
 *Die Prompts sind editierbar und versioniert (Admin → „Prompts"); der Wortlaut in Abschnitt 8
 entspricht den aktuellen Seed-Versionen aus `db-export/setup.sql`.*
+
+*Stand 2026-09-22: S11 überspringt reine Tabellen-Abschnitte ohne LLM-Aufruf; S12 blockiert
+`marke`-Funde nicht mehr (deterministischer Marken-Abgleich statt LLM-Blocker).*
