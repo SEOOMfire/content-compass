@@ -55,6 +55,16 @@ export interface Usage {
   tokensOut: number;
 }
 
+/** Neuere OpenAI-Modelle erwarten `max_completion_tokens` statt `max_tokens`. */
+function usesCompletionTokens(model: string): boolean {
+  return /^(o[1-9]|gpt-4\.1|gpt-5)/i.test(modelId(model));
+}
+
+/** Reasoning-Modelle der o-Serie unterstützen kein `temperature`. */
+function supportsTemperature(model: string): boolean {
+  return !/^o[1-9]/i.test(modelId(model));
+}
+
 async function callChat(
   model: string,
   system: string,
@@ -62,18 +72,26 @@ async function callChat(
   temperature: number,
   maxTokens: number,
 ): Promise<{ text: string; usage: Usage }> {
+  const id = modelId(model);
+  const params: Record<string, unknown> = {
+    model: id,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+  if (usesCompletionTokens(id)) {
+    params["max_completion_tokens"] = maxTokens;
+  } else {
+    params["max_tokens"] = maxTokens;
+  }
+  if (supportsTemperature(id)) {
+    params["temperature"] = temperature;
+  }
   const res = await fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey()}` },
-    body: JSON.stringify({
-      model,
-      temperature,
-      max_tokens: maxTokens,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
+    body: JSON.stringify(params),
   });
   if (!res.ok) throw await gatewayError(res);
   const json = (await res.json()) as {
