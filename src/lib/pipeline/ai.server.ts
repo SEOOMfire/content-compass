@@ -60,9 +60,12 @@ function usesCompletionTokens(model: string): boolean {
   return /^(o[1-9]|gpt-4\.1|gpt-5)/i.test(modelId(model));
 }
 
-/** Reasoning-Modelle der o-Serie unterstützen kein `temperature`. */
+/**
+ * Reasoning-Modelle (o-Serie + GPT-5.x) unterstützen kein `temperature`
+ * (bzw. nur den Default 1). Für sie wird der Parameter weggelassen.
+ */
 function supportsTemperature(model: string): boolean {
-  return !/^o[1-9]/i.test(modelId(model));
+  return !/^(o[1-9]|gpt-5)/i.test(modelId(model));
 }
 
 async function callChat(
