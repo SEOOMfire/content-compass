@@ -50,6 +50,13 @@
       "when": 1789118581105,
       "tag": "0006_seed_serp_opportunity_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790073894000,
+      "tag": "0007_add_reasoning_effort",
+      "breakpoints": true
     }
   ]
 }

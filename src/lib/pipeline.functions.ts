@@ -176,18 +176,23 @@ export const savePrompt = createServerFn({ method: "POST" })
       .single();
     if (error || !current) throw new Error("Prompt nicht gefunden.");
     const version = (current.version ?? 1) + 1;
-    await supabaseAdmin.from("prompt_templates").update({
-      system_prompt: data.system_prompt,
-      user_prompt: data.user_prompt,
-      model: data.model,
-      temperature: data.temperature,
-      max_tokens: data.max_tokens,
-      reasoning_effort: data.reasoning_effort ?? null,
-      version,
-      updated_by: context.userId,
-      updated_at: new Date().toISOString(),
-    }).eq("id", data.id);
-    await supabaseAdmin.from("prompt_versions").insert({
+    const { error: updateError } = await supabaseAdmin
+      .from("prompt_templates")
+      .update({
+        system_prompt: data.system_prompt,
+        user_prompt: data.user_prompt,
+        model: data.model,
+        temperature: data.temperature,
+        max_tokens: data.max_tokens,
+        reasoning_effort: data.reasoning_effort ?? null,
+        version,
+        updated_by: context.userId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.id);
+    if (updateError) throw new Error(updateError.message);
+
+    const { error: insertError } = await supabaseAdmin.from("prompt_versions").insert({
       template_id: data.id,
       version,
       system_prompt: data.system_prompt,
@@ -199,6 +204,8 @@ export const savePrompt = createServerFn({ method: "POST" })
       response_format: current.response_format,
       created_by: context.userId,
     });
+    if (insertError) throw new Error(insertError.message);
+
     return { version };
   });
 
