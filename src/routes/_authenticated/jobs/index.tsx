@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { createJob } from "@/lib/pipeline.functions";
+import { createJob, deleteJob } from "@/lib/pipeline.functions";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,17 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PIPELINE, STEP_BY_KEY } from "@/lib/pipeline/types";
 
 export const Route = createFileRoute("/_authenticated/jobs/")({
@@ -37,6 +49,7 @@ function JobsPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [marketId, setMarketId] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const markets = useQuery({
     queryKey: ["markets-with-index"],
@@ -120,6 +133,19 @@ function JobsPage() {
     }
   }
 
+  async function onDelete(jobId: string) {
+    setDeletingId(jobId);
+    try {
+      await deleteJob({ data: { jobId } });
+      toast.success("Job gelöscht.");
+      await qc.invalidateQueries({ queryKey: ["jobs"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Job konnte nicht gelöscht werden");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
 
   return (
     <div className="space-y-8">
@@ -180,37 +206,73 @@ function JobsPage() {
             <p className="text-sm text-muted-foreground">Noch keine Jobs vorhanden.</p>
           )}
           {(jobs.data ?? []).map((j: { id: string; source_url: string; status: string; current_step: string | null; created_at: string; markets: { country: string; language: string } | null }) => (
-            <Link
+            <div
               key={j.id}
-              to="/jobs/$jobId"
-              params={{ jobId: j.id }}
-              className="block rounded-md border border-border px-3 py-2 hover:bg-accent"
+              className="flex items-stretch gap-1 rounded-md border border-border hover:bg-accent"
             >
-              <span className="flex items-center justify-between gap-4">
-                <span className="truncate text-sm">{j.source_url}</span>
-                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                  <span>
-                    {(j.markets as { country?: string } | null)?.country ?? "—"}
-                  </span>
-                  <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
-                    {j.status}
-                  </Badge>
-                </span>
-              </span>
-              {j.status === "running" && (
-                <span className="mt-2 flex items-center gap-3">
-                  <Progress value={progressOf(j)} className="h-2 flex-1" />
-                  <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                    {progressOf(j)} %
+              <Link
+                to="/jobs/$jobId"
+                params={{ jobId: j.id }}
+                className="block min-w-0 flex-1 px-3 py-2"
+              >
+                <span className="flex items-center justify-between gap-4">
+                  <span className="truncate text-sm">{j.source_url}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      {(j.markets as { country?: string } | null)?.country ?? "—"}
+                    </span>
+                    <Badge variant={j.status === "error" ? "destructive" : "secondary"}>
+                      {j.status}
+                    </Badge>
                   </span>
                 </span>
-              )}
-              {j.status === "running" && j.current_step && (
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {STEP_BY_KEY[j.current_step]?.label ?? j.current_step}
-                </span>
-              )}
-            </Link>
+                {j.status === "running" && (
+                  <span className="mt-2 flex items-center gap-3">
+                    <Progress value={progressOf(j)} className="h-2 flex-1" />
+                    <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                      {progressOf(j)} %
+                    </span>
+                  </span>
+                )}
+                {j.status === "running" && j.current_step && (
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {STEP_BY_KEY[j.current_step]?.label ?? j.current_step}
+                  </span>
+                )}
+              </Link>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="m-1 shrink-0 self-center text-muted-foreground hover:text-destructive"
+                    aria-label="Job löschen"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Job löschen?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Der Job „{j.source_url}“ und alle zugehörigen Schritte und verifizierten
+                      Links werden dauerhaft entfernt. Das kann nicht rückgängig gemacht werden.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={deletingId === j.id}
+                      onClick={() => onDelete(j.id)}
+                    >
+                      {deletingId === j.id ? "Löschen…" : "Löschen"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           ))}
         </CardContent>
       </Card>

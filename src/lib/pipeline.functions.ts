@@ -37,6 +37,17 @@ export const createJob = createServerFn({ method: "POST" })
     return { id: job.id };
   });
 
+export const deleteJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertRole(context.supabase as never, context.userId, "admin");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("jobs").delete().eq("id", data.jobId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const runStepFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
