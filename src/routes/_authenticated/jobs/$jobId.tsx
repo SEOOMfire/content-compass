@@ -99,8 +99,11 @@ function JobDetail() {
         data: fromStep ? { jobId, fromStep } : { jobId },
       });
       const failed = res.find((r) => !r.ok);
-      if (failed) toast.error(`${failed.step}: ${failed.error}`);
-      else toast.success("Pipeline abgeschlossen");
+      if (failed) {
+        toast.error(
+          `${failed.step}: ${failed.error}${failed.attempts ? ` (${failed.attempts} Versuche)` : ""}`,
+        );
+      } else toast.success("Pipeline abgeschlossen");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Fehler");
     } finally {

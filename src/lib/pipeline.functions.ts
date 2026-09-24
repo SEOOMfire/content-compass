@@ -104,10 +104,35 @@ export const runFromStepFn = createServerFn({ method: "POST" })
     const { executeStep } = await import("@/lib/pipeline/engine.server");
     const { PIPELINE } = await import("@/lib/pipeline/types");
     const startIdx = data.fromStep ? PIPELINE.findIndex((s) => s.key === data.fromStep) : 0;
-    const results: { step: string; ok: boolean; error?: string }[] = [];
+
+    // Automatische Wiederholung: je Schritt maximal 3 Retries (also 4 Versuche),
+    // mit kurzer Pause für transiente Fehler (Rate-Limit, Timeout, SE-Serverfehler).
+    const MAX_STEP_RETRIES = 3;
+    const RETRY_DELAY_MS = 2000;
+
+    const runStep = async (stepKey: string) => {
+      let attempts = 0;
+      for (;;) {
+        attempts += 1;
+        const res = await executeStep(data.jobId, stepKey);
+        // Erfolg, blockierter Schritt (fehlende Voraussetzung) oder Retry-Budget
+        // erschöpft → Ergebnis zurückgeben. Sonst kurz warten und erneut versuchen.
+        if (res.ok || (res as { blocked?: boolean }).blocked || attempts > MAX_STEP_RETRIES) {
+          return { ...res, attempts };
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+    };
+
+    const results: { step: string; ok: boolean; error?: string; attempts?: number }[] = [];
     for (const step of PIPELINE.slice(Math.max(startIdx, 0))) {
-      const res = await executeStep(data.jobId, step.key);
-      results.push({ step: step.key, ok: res.ok, ...(res.ok ? {} : { error: res.error }) });
+      const res = await runStep(step.key);
+      results.push({
+        step: step.key,
+        ok: res.ok,
+        attempts: res.attempts,
+        ...(res.ok ? {} : { error: res.error }),
+      });
       if (!res.ok) break;
     }
     return results;
