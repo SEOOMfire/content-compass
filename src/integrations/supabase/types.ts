@@ -90,6 +90,7 @@ export type Database = {
           source_url: string
           status: string
           updated_at: string
+          workspace_id: string
         }
         Insert: {
           context?: Json
@@ -101,6 +102,7 @@ export type Database = {
           source_url: string
           status?: string
           updated_at?: string
+          workspace_id: string
         }
         Update: {
           context?: Json
@@ -112,6 +114,7 @@ export type Database = {
           source_url?: string
           status?: string
           updated_at?: string
+          workspace_id?: string
         }
         Relationships: [
           {
@@ -508,24 +511,51 @@ export type Database = {
           },
         ]
       }
-      user_roles: {
+      workspace_members: {
         Row: {
           created_at: string
           id: string
-          role: Database["public"]["Enums"]["app_role"]
+          invited_by: string | null
+          role: Database["public"]["Enums"]["workspace_role"]
           user_id: string
+          workspace_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          role: Database["public"]["Enums"]["app_role"]
+          invited_by?: string | null
+          role?: Database["public"]["Enums"]["workspace_role"]
           user_id: string
+          workspace_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          invited_by?: string | null
+          role?: Database["public"]["Enums"]["workspace_role"]
           user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      workspaces: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
         }
         Relationships: []
       }
@@ -584,16 +614,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      has_role: {
+      can_manage_workspace: {
         Args: {
-          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+          _workspace_id: string
+        }
+        Returns: boolean
+      }
+      is_workspace_admin: {
+        Args: {
           _user_id: string
         }
         Returns: boolean
       }
+      workspace_role_of: {
+        Args: {
+          _user_id: string
+          _workspace_id: string
+        }
+        Returns: Database["public"]["Enums"]["workspace_role"] | null
+      }
     }
     Enums: {
-      app_role: "admin" | "editor" | "viewer"
+      workspace_role: "viewer" | "manager" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -721,7 +764,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "editor", "viewer"],
+      workspace_role: ["viewer", "manager", "admin"],
     },
   },
 } as const

@@ -1,32 +1,88 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { WorkspaceRole } from "@/lib/roles";
 
-async function assertRole(
-  supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown }> },
-  userId: string,
-  role: "admin" | "editor",
-) {
-  const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: role });
-  if (data !== true && role === "editor") {
-    const { data: admin } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
-    if (admin === true) return;
+const MANAGER_ROLES: WorkspaceRole[] = ["manager", "admin"];
+
+async function isAdmin(userId: string): Promise<boolean> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("workspace_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "admin");
+  return ((data ?? []) as unknown[]).length > 0;
+}
+
+async function getMembership(userId: string, workspaceId: string): Promise<WorkspaceRole | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("workspace_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  return (data?.role as WorkspaceRole | undefined) ?? null;
+}
+
+/** Erzwingt eine beliebige Mitgliedschaft (viewer genügt) im Arbeitsbereich. */
+async function assertWorkspaceMember(userId: string, workspaceId: string): Promise<void> {
+  if (await isAdmin(userId)) return;
+  if (!(await getMembership(userId, workspaceId))) {
+    throw new Error("Keine Berechtigung für diese Aktion.");
   }
-  if (data !== true) throw new Error("Keine Berechtigung für diese Aktion.");
+}
+
+/** Erzwingt mindestens die Rolle `manager` (oder `admin`) im Arbeitsbereich. */
+async function assertWorkspaceRole(
+  userId: string,
+  workspaceId: string,
+  required: WorkspaceRole[],
+): Promise<void> {
+  if (await isAdmin(userId)) return;
+  const role = await getMembership(userId, workspaceId);
+  if (!role || !required.includes(role)) {
+    throw new Error("Keine Berechtigung für diese Aktion.");
+  }
+}
+
+async function assertAdmin(userId: string): Promise<void> {
+  if (!(await isAdmin(userId))) throw new Error("Keine Berechtigung für diese Aktion.");
+}
+
+/** Lädt die workspace_id eines Jobs (für Bereichsprüfungen). */
+async function getJobWorkspace(jobId: string): Promise<string> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin
+    .from("jobs")
+    .select("id,workspace_id")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error || !data) throw new Error("Job nicht gefunden.");
+  return data.workspace_id;
 }
 
 export const createJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ source_url: z.string().url(), market_id: z.string().uuid() }).parse(d),
+    z
+      .object({
+        source_url: z.string().url(),
+        market_id: z.string().uuid(),
+        workspace_id: z.string().uuid(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertWorkspaceRole(context.userId, data.workspace_id, MANAGER_ROLES);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .insert({
         source_url: data.source_url,
         market_id: data.market_id,
+        workspace_id: data.workspace_id,
         created_by: context.userId,
         status: "idle",
         context: {},
@@ -41,7 +97,8 @@ export const deleteJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceRole(context.userId, workspaceId, MANAGER_ROLES);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("jobs").delete().eq("id", data.jobId);
     if (error) throw new Error(error.message);
@@ -53,7 +110,9 @@ export const runStepFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({ jobId: z.string().uuid(), stepKey: z.string() }).parse(d),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceRole(context.userId, workspaceId, MANAGER_ROLES);
     const { executeStep } = await import("@/lib/pipeline/engine.server");
     const res = await executeStep(data.jobId, data.stepKey);
     return {
@@ -66,7 +125,9 @@ export const runStepFn = createServerFn({ method: "POST" })
 export const exportJobReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceMember(context.userId, workspaceId);
     const { buildJobReport } = await import("@/lib/pipeline/report.server");
     return await buildJobReport(data.jobId);
   });
@@ -74,7 +135,9 @@ export const exportJobReport = createServerFn({ method: "POST" })
 export const exportPromptVars = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceMember(context.userId, workspaceId);
     const { buildPromptVarsReport } = await import("@/lib/pipeline/prompt-vars.server");
     return await buildPromptVarsReport(data.jobId);
   });
@@ -82,15 +145,35 @@ export const exportPromptVars = createServerFn({ method: "POST" })
 export const exportFullJobDocs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceMember(context.userId, workspaceId);
     const { buildFullJobDocumentation } = await import("@/lib/pipeline/full-export.server");
     return await buildFullJobDocumentation(data.jobId);
+  });
+
+/** Lokalisierter Endtext (S13) für Vorschau + .md-Download in der Liste. */
+export const getJobContent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ jobId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceMember(context.userId, workspaceId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: job, error } = await supabaseAdmin
+      .from("jobs")
+      .select("context")
+      .eq("id", data.jobId)
+      .maybeSingle();
+    if (error || !job) throw new Error("Job nicht gefunden.");
+    const ctx = (job.context ?? {}) as Record<string, unknown>;
+    return { markdown: (ctx["exportMarkdown"] as string | undefined) ?? null };
   });
 
 export const exportAllPrompts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { buildAllPromptsMarkdown } = await import("@/lib/pipeline/prompts-export.server");
     return await buildAllPromptsMarkdown();
   });
@@ -100,7 +183,9 @@ export const runFromStepFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({ jobId: z.string().uuid(), fromStep: z.string().optional() }).parse(d),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const workspaceId = await getJobWorkspace(data.jobId);
+    await assertWorkspaceRole(context.userId, workspaceId, MANAGER_ROLES);
     const { executeStep } = await import("@/lib/pipeline/engine.server");
     const { PIPELINE } = await import("@/lib/pipeline/types");
     const startIdx = data.fromStep ? PIPELINE.findIndex((s) => s.key === data.fromStep) : 0;
@@ -148,7 +233,7 @@ export const previewLinkPool = createServerFn({ method: "POST" })
     z.object({ marketId: z.string().uuid(), sourceUrl: z.string().url() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { buildLinkPool } = await import("@/lib/pipeline/hub.server");
     const { data: market, error } = await supabaseAdmin
@@ -203,7 +288,7 @@ export const savePrompt = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: current, error } = await supabaseAdmin
       .from("prompt_templates")
@@ -251,7 +336,7 @@ export const testPrompt = createServerFn({ method: "POST" })
     z.object({ stepKey: z.string(), vars: z.record(z.string(), z.string()) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { runPrompt } = await import("@/lib/pipeline/ai.server");
     const { data: tpl, error } = await supabaseAdmin
@@ -264,47 +349,126 @@ export const testPrompt = createServerFn({ method: "POST" })
     return { raw: res.raw, model: res.model };
   });
 
-export const assignRole = createServerFn({ method: "POST" })
+/** Arbeitsbereiche des Nutzers (oder alle, wenn admin) mit Rollen + Mitgliederzahl. */
+export const listWorkspaces = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const admin = await isAdmin(context.userId);
+    const { data: memberships } = await supabaseAdmin
+      .from("workspace_members")
+      .select("workspace_id,user_id,role");
+    const rows = (memberships ?? []) as {
+      workspace_id: string;
+      user_id: string;
+      role: WorkspaceRole;
+    }[];
+    const myRows = rows.filter((r) => r.user_id === context.userId);
+    const visibleIds = admin
+      ? Array.from(new Set(rows.map((r) => r.workspace_id)))
+      : Array.from(new Set(myRows.map((r) => r.workspace_id)));
+
+    const { data: workspaces } = await supabaseAdmin.from("workspaces").select("id,name");
+    return ((workspaces ?? []) as { id: string; name: string }[])
+      .filter((w) => visibleIds.includes(w.id))
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        role: myRows.find((r) => r.workspace_id === w.id)?.role ?? null,
+        memberCount: rows.filter((r) => r.workspace_id === w.id).length,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+export const createWorkspace = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ name: z.string().min(1).max(255) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: ws, error } = await supabaseAdmin
+      .from("workspaces")
+      .insert({ name: data.name.trim(), created_by: context.userId })
+      .select("id,name")
+      .single();
+    if (error) throw new Error(error.message);
+    return ws;
+  });
+
+export const updateWorkspace = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z
-      .object({
-        userId: z.string().uuid(),
-        role: z.enum(["admin", "editor", "viewer"]),
-        action: z.enum(["add", "remove"]),
-      })
-      .parse(d),
+    z.object({ id: z.string().uuid(), name: z.string().min(1).max(255) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    if (data.action === "add") {
-      await supabaseAdmin
-        .from("user_roles")
-        .upsert({ user_id: data.userId, role: data.role }, { onConflict: "user_id,role" });
-    } else {
-      await supabaseAdmin
-        .from("user_roles")
-        .delete()
-        .eq("user_id", data.userId)
-        .eq("role", data.role);
-    }
+    const { error } = await supabaseAdmin
+      .from("workspaces")
+      .update({ name: data.name.trim() })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
+export interface WorkspaceMemberRow {
+  user_id: string;
+  role: WorkspaceRole;
+  email: string | null;
+}
+
+export const listWorkspaceMembers = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ workspaceId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }): Promise<WorkspaceMemberRow[]> => {
+    await assertWorkspaceRole(context.userId, data.workspaceId, MANAGER_ROLES);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: members, error } = await supabaseAdmin
+      .from("workspace_members")
+      .select("user_id,role")
+      .eq("workspace_id", data.workspaceId)
+      .order("created_at");
+    if (error) throw new Error(error.message);
+
+    const userIds = (members ?? []).map((m: { user_id: string }) => m.user_id);
+    const emailById = new Map<string, string>();
+    if (userIds.length) {
+      const { data: profiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id,email")
+        .in("id", userIds);
+      for (const p of (profiles ?? []) as { id: string; email: string }[]) {
+        emailById.set(p.id, p.email);
+      }
+    }
+    return (members ?? []).map(
+      (m: { user_id: string; role: WorkspaceRole }): WorkspaceMemberRow => ({
+        user_id: m.user_id,
+        role: m.role,
+        email: emailById.get(m.user_id) ?? null,
+      }),
+    );
+  });
+
+/** Mitglied einladen (role ∈ viewer/manager; admin nur durch Admin). */
 export const inviteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
     z
       .object({
         email: z.string().email(),
-        role: z.enum(["admin", "editor", "viewer"]).default("admin"),
+        workspace_id: z.string().uuid(),
+        role: z.enum(["viewer", "manager", "admin"]),
         redirectTo: z.string().url(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    if (data.role === "admin") {
+      await assertAdmin(context.userId);
+    } else {
+      await assertWorkspaceRole(context.userId, data.workspace_id, MANAGER_ROLES);
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const email = data.email.trim().toLowerCase();
 
@@ -333,11 +497,82 @@ export const inviteUser = createServerFn({ method: "POST" })
       link = gen.data.properties?.action_link ?? null;
     }
 
-    await supabaseAdmin
-      .from("user_roles")
-      .upsert({ user_id: userId, role: data.role }, { onConflict: "user_id,role" });
+    await supabaseAdmin.from("workspace_members").upsert(
+      {
+        workspace_id: data.workspace_id,
+        user_id: userId,
+        role: data.role,
+        invited_by: context.userId,
+      },
+      { onConflict: "workspace_id,user_id" },
+    );
 
     return { userId, email, emailSent, link };
+  });
+
+/** Rolle eines Mitglieds ändern/entfernen (role = null entfernt). */
+export const updateWorkspaceMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        workspaceId: z.string().uuid(),
+        userId: z.string().uuid(),
+        role: z.enum(["viewer", "manager", "admin"]).nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const acting = await getMembership(context.userId, data.workspaceId);
+    const isAdminUser = await isAdmin(context.userId);
+    if (!isAdminUser && acting !== "manager") {
+      throw new Error("Keine Berechtigung für diese Aktion.");
+    }
+
+    const target = await getMembership(data.userId, data.workspaceId);
+
+    // Rollen-Eskalation: nur Admins dürfen Admin-Rechte vergeben/entziehen
+    // und vorhandene Admins verwalten.
+    if (!isAdminUser) {
+      if (target === "admin") {
+        throw new Error("Administratoren können nur von Admins verwaltet werden.");
+      }
+      if (data.role === "admin") {
+        throw new Error("Nur Administratoren können Admin-Rechte vergeben.");
+      }
+    }
+
+    // Letzter Admin darf nicht entfernt/degradiert werden.
+    if (data.role !== "admin" && target === "admin") {
+      const { data: admins } = await supabaseAdmin
+        .from("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", data.workspaceId)
+        .eq("role", "admin");
+      if (((admins ?? []) as unknown[]).length <= 1) {
+        throw new Error("Der letzte Administrator kann nicht entfernt werden.");
+      }
+    }
+
+    if (data.role === null) {
+      await supabaseAdmin
+        .from("workspace_members")
+        .delete()
+        .eq("workspace_id", data.workspaceId)
+        .eq("user_id", data.userId);
+    } else {
+      await supabaseAdmin.from("workspace_members").upsert(
+        {
+          workspace_id: data.workspaceId,
+          user_id: data.userId,
+          role: data.role,
+          invited_by: context.userId,
+        },
+        { onConflict: "workspace_id,user_id" },
+      );
+    }
+    return { ok: true };
   });
 
 /** Pfadverzeichnis eines Markts aus den Sitemaps (DE ↔ Zielland) aufbauen. */
@@ -345,7 +580,7 @@ export const importMarketPaths = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ marketId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertRole(context.supabase as never, context.userId, "admin");
+    await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: market, error } = await supabaseAdmin
       .from("markets")

@@ -26,7 +26,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "forgot">("login");
 
   useEffect(() => {
     if (window.location.hash.includes("type=recovery")) {
@@ -48,17 +48,6 @@ function AuthPage() {
         });
         if (error) throw error;
         toast.success("E-Mail zum Zurücksetzen verschickt (bitte auch Spam prüfen).");
-        setMode("login");
-        return;
-      }
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/jobs` },
-        });
-        if (error) throw error;
-        toast.success("Konto angelegt. Bitte anmelden (ggf. E-Mail bestätigen).");
         setMode("login");
         return;
       }
@@ -100,43 +89,30 @@ function AuthPage() {
             {mode !== "forgot" && (
               <div className="space-y-1.5">
                 <Label htmlFor="password">Passwort</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading
-                ? "…"
-                : mode === "login"
-                  ? "Anmelden"
-                  : mode === "signup"
-                    ? "Konto anlegen"
-                    : "Link zum Zurücksetzen senden"}
-            </Button>
-            {mode === "login" && (
-              <button
-                type="button"
-                className="w-full text-xs text-muted-foreground underline-offset-2 hover:underline"
-                onClick={() => setMode("forgot")}
-              >
-                Passwort vergessen?
-              </button>
-            )}
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          )}
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "…" : mode === "login" ? "Anmelden" : "Link zum Zurücksetzen senden"}
+          </Button>
+          {mode === "login" && (
             <button
               type="button"
               className="w-full text-xs text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => setMode(mode === "login" ? "signup" : "login")}
+              onClick={() => setMode("forgot")}
             >
-              {mode === "login" ? "Neues internes Konto anlegen" : "Zurück zur Anmeldung"}
+              Passwort vergessen?
             </button>
-          </form>
+          )}
+        </form>
         </CardContent>
       </Card>
     </div>

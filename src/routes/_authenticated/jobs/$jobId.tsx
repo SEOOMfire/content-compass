@@ -11,6 +11,8 @@ import {
   exportPromptVars,
   exportFullJobDocs,
 } from "@/lib/pipeline.functions";
+import { downloadMarkdown } from "@/lib/download";
+import { useActiveWorkspace } from "@/lib/use-active-workspace";
 import { PIPELINE } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +42,8 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 function JobDetail() {
   const { jobId } = Route.useParams();
   const qc = useQueryClient();
+  const { role } = useActiveWorkspace();
+  const canManage = role === "manager" || role === "admin";
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -110,15 +114,6 @@ function JobDetail() {
       setBusy(null);
       await refresh();
     }
-  }
-
-  function downloadMarkdown(filename: string, markdown: string) {
-    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   async function downloadReport() {
@@ -196,9 +191,11 @@ function JobDetail() {
             <FileDown className="mr-2 h-4 w-4" />
             {busy === "full" ? "Erstelle…" : "Gesamtdoku (.md)"}
           </Button>
-          <Button onClick={() => runAll()} disabled={busy !== null}>
-            <Play className="mr-2 h-4 w-4" /> Komplett ausführen
-          </Button>
+          {canManage && (
+            <Button onClick={() => runAll()} disabled={busy !== null}>
+              <Play className="mr-2 h-4 w-4" /> Komplett ausführen
+            </Button>
+          )}
         </div>
       </div>
 
@@ -229,22 +226,26 @@ function JobDetail() {
                       {step.run_count ? ` ·${step.run_count}` : ""}
                     </Badge>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => runOne(def.key)}
-                  >
-                    {busy === def.key ? "…" : step?.status === "done" ? "Erneut" : "Ausführen"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy !== null}
-                    onClick={() => runAll(def.key)}
-                  >
-                    ab hier
-                  </Button>
+                  {canManage && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy !== null}
+                        onClick={() => runOne(def.key)}
+                      >
+                        {busy === def.key ? "…" : step?.status === "done" ? "Erneut" : "Ausführen"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy !== null}
+                        onClick={() => runAll(def.key)}
+                      >
+                        ab hier
+                      </Button>
+                    </>
+                  )}
                 </div>
               </CardHeader>
               {isOpen && (
