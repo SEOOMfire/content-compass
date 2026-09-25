@@ -1111,10 +1111,17 @@ export async function runStep(
         .map((s) => [s.title, s.text].filter(Boolean).join("\n"))
         .join("\n---\n");
       if (!referenceTexts.trim()) {
-        throw new Error(
-          "Keine Referenztexte vorhanden – bitte zuerst S7a (Link-Pool) ausführen; " +
-            "das Stilprofil entsteht aus den geladenen Geschwisterartikeln.",
-        );
+        return {
+          output: {
+            cached: false,
+            skipped: true,
+            profile: null,
+            hint:
+              "Keine Geschwisterartikel im Link-Pool gefunden – Stilprofil übersprungen, " +
+              "es gilt ein neutraler Standard ohne Stilvorgaben.",
+          },
+          context: { styleProfile: {} },
+        };
       }
       const tpl = await loadTemplate("style_profile");
       const res = await runPrompt(tpl, { reference_texts: referenceTexts.slice(0, 12000) });

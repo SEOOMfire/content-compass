@@ -23,9 +23,9 @@ export function dependencyBlocker(stepKey: string, ctx: JobContext): string | nu
       return ctx.source ? needPool() : needSource();
 
     case "S5_style_profile":
-      return ctx.linkPool?.siblings?.length
-        ? null
-        : "S7a (Link-Pool) muss zuerst Geschwisterartikel geladen haben.";
+      // Fehlende Geschwisterartikel sind kein Blocker mehr: S5 läuft dann mit
+      // neutralem Standard weiter und vermerkt das Fehlen nur als Hinweis.
+      return null;
     case "S6_localization_plan":
       return needSource();
     case "S7_link_candidates":
