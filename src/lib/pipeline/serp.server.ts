@@ -184,13 +184,13 @@ async function runOne(
     };
   }
   if ((task.status_code ?? 0) !== 20000) {
-    return {
-      query,
-      keyword,
-      status: "error",
-      items: [],
-      error: task.status_message ?? "Task-Fehler",
-    };
+    const msg = task.status_message ?? "Task-Fehler";
+    // „No Search Results" (Status 20100) = Abfrage lief fehlerfrei, aber ohne
+    // organische Treffer → als leeres Ergebnis durchreichen, NICHT abbrechen.
+    if (task.status_code === 20100 || /no\s+(search\s+)?results/i.test(msg)) {
+      return { query, keyword, status: "ok", items: [] };
+    }
+    return { query, keyword, status: "error", items: [], error: msg };
   }
   const items: SerpItem[] = (task.result?.[0]?.items ?? [])
     .filter((i) => i.type === "organic" && typeof i.url === "string")
